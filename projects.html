@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}المشاريع{% endblock %}
+{% block page_title %}🏗️ إدارة المشاريع{% endblock %}
+{% block page_sub %}{{ projects|length }} مشروع نشط{% endblock %}
+{% block header_actions %}
+  {% if is_manager %}<a href="{{ url_for('new_project') }}" class="btn btn-electric btn-sm">＋ مشروع جديد</a>{% endif %}
+{% endblock %}
+{% block content %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px">
+{% for row in projects %}
+{% set p = row.p %}
+<div class="panel panel-glow" style="--proj-color:{{ p.color }}">
+  <div style="height:5px;background:linear-gradient(90deg,{{ p.color }},{{ p.color }}88)"></div>
+  <div style="padding:16px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:12px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:11px;font-family:monospace;font-weight:800;color:{{ p.color }};background:{{ p.color }}22;padding:2px 8px;border-radius:20px;border:1px solid {{ p.color }}44">{{ p.code }}</span>
+          <span class="badge badge-{{ p.status or 'active' }}" style="font-size:10px">{{ p.status }}</span>
+        </div>
+        <h3 style="font-size:15px;font-weight:800;color:var(--text);line-height:1.3">{{ p.name }}</h3>
+        {% if p.client %}<div style="font-size:12px;color:var(--text3);margin-top:3px">🏢 {{ p.client }}</div>{% endif %}
+        {% if p.location %}<div style="font-size:12px;color:var(--text3)">📍 {{ p.location }}</div>{% endif %}
+      </div>
+      {% if is_manager %}
+      <div style="display:flex;gap:4px;flex-shrink:0;margin-right:8px">
+        <a href="{{ url_for('edit_project', pid=p.id) }}" class="btn btn-warn btn-xs">✏️</a>
+        <button class="btn btn-danger btn-xs" onclick="confirmAction('{{ url_for('delete_project', pid=p.id) }}','أرشفة المشروع','سيتم إخفاء المشروع من القوائم')">🗑</button>
+      </div>
+      {% endif %}
+    </div>
+    <div class="progress-bar" style="margin-bottom:6px">
+      <div class="progress-fill" style="width:{{ p.progress }}%;background:linear-gradient(90deg,{{ p.color }},{{ p.color }}88)"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-bottom:12px">
+      <span>الإنجاز: <strong style="color:{{ p.color }}">{{ p.progress }}%</strong></span>
+      {% if p.end_date %}<span>الانتهاء: {{ p.end_date|ar_date }}</span>{% endif %}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:10px;background:rgba(0,20,80,.3);border-radius:var(--rs)">
+      <a href="{{ url_for('outgoing') }}?project={{ p.id }}" style="text-align:center;text-decoration:none">
+        <div style="font-size:20px;font-weight:900;color:var(--elec)">{{ row.out_c }}</div>
+        <div style="font-size:11px;color:var(--text3)">صادر</div>
+      </a>
+      <a href="{{ url_for('incoming') }}?project={{ p.id }}" style="text-align:center;text-decoration:none">
+        <div style="font-size:20px;font-weight:900;color:var(--mint)">{{ row.in_c }}</div>
+        <div style="font-size:11px;color:var(--text3)">وارد</div>
+      </a>
+    </div>
+    {% if row.last_activity %}
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:left">آخر نشاط: {{ row.last_activity|ar_date }}</div>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="empty" style="grid-column:span 3">
+  <div class="empty-icon">🏗️</div>
+  <div class="empty-title">لا توجد مشاريع</div>
+  {% if is_manager %}<a href="{{ url_for('new_project') }}" class="btn btn-electric" style="margin-top:16px">＋ إضافة مشروع</a>{% endif %}
+</div>
+{% endfor %}
+</div>
+{% endblock %}

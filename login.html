@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>تسجيل الدخول — CCMS</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Cairo',sans-serif;background:#030b1f;color:#e2f0fb;min-height:100vh;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 80% 60% at 20% 20%,rgba(0,119,182,.25),transparent 60%),radial-gradient(ellipse 60% 50% at 80% 80%,rgba(0,180,216,.2),transparent 55%);pointer-events:none}
+.orb{position:absolute;border-radius:50%;filter:blur(80px);animation:float 8s ease-in-out infinite}
+.orb1{width:500px;height:500px;background:rgba(0,119,182,.12);top:-150px;right:-100px;animation-delay:0s}
+.orb2{width:400px;height:400px;background:rgba(0,212,255,.08);bottom:-100px;left:-80px;animation-delay:3s}
+@keyframes float{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-30px) scale(1.05)}}
+.card{background:rgba(9,22,80,.8);backdrop-filter:blur(20px);border:1px solid rgba(26,48,144,.6);border-radius:16px;padding:44px 40px;width:100%;max-width:420px;position:relative;z-index:1;box-shadow:0 24px 80px rgba(0,0,0,.6)}
+.card::before{content:'';position:absolute;top:0;right:0;left:0;height:3px;background:linear-gradient(90deg,transparent,#00d4ff,#00b4d8,transparent);border-radius:16px 16px 0 0}
+.logo{text-align:center;margin-bottom:32px}
+.logo-icon{width:64px;height:64px;background:linear-gradient(135deg,#0077b6,#00d4ff);border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 14px;box-shadow:0 0 30px rgba(0,212,255,.35)}
+.logo h1{font-size:22px;font-weight:900;color:#00d4ff;letter-spacing:.05em}
+.logo p{font-size:12px;color:#4a7fa5;margin-top:4px}
+.flash{padding:10px 14px;border-radius:8px;margin-bottom:16px;font-size:13px;font-weight:600;background:rgba(255,56,96,.1);border:1px solid rgba(255,56,96,.3);color:#ff3860;display:flex;align-items:center;gap:8px}
+label{display:block;font-size:12px;font-weight:700;color:#8ec5e6;margin-bottom:6px}
+input{width:100%;background:rgba(0,20,80,.6);border:1px solid rgba(26,48,144,.8);border-radius:8px;padding:12px 16px;color:#e2f0fb;font-size:14px;font-family:inherit;transition:.2s;margin-bottom:16px}
+input:focus{outline:none;border-color:#00b4d8;box-shadow:0 0 0 3px rgba(0,180,216,.15);background:rgba(0,30,100,.7)}
+input::placeholder{color:#4a7fa5}
+.btn{width:100%;background:linear-gradient(135deg,#00d4ff,#00b4d8);color:#030b1f;border:none;padding:13px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;transition:.2s;margin-top:8px;letter-spacing:.03em}
+.btn:hover{transform:translateY(-2px);box-shadow:0 8px 25px rgba(0,212,255,.4)}
+.hint{text-align:center;margin-top:18px;font-size:12px;color:#4a7fa5;padding:10px;background:rgba(0,119,182,.08);border-radius:8px;border:1px solid rgba(26,48,144,.4)}
+</style></head><body>
+<div class="orb orb1"></div><div class="orb orb2"></div>
+<div class="card">
+  <div class="logo">
+    <div class="logo-icon">🏢</div>
+    <h1>CCMS</h1>
+    <p>نظام إدارة الاتصالات الإدارية المتكامل</p>
+  </div>
+  {% with messages=get_flashed_messages(with_categories=true) %}
+  {% for cat,msg in messages %}<div class="flash">❌ {{msg}}</div>{% endfor %}{% endwith %}
+  <form method="POST">
+    <label>اسم المستخدم</label>
+    <input type="text" name="username" placeholder="أدخل اسم المستخدم" autofocus required>
+    <label>كلمة المرور</label>
+    <input type="password" name="password" placeholder="••••••••••" required>
+    <button class="btn" type="submit">🔑 تسجيل الدخول</button>
+  </form>
+  <div class="hint">🔑 Admin: <strong>admin</strong> / <strong>Admin@2025</strong></div>
+</div>
+</body></html>

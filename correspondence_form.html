@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% set is_edit = item is defined and item %}
+{% block title %}{{ 'تعديل مراسلة' if is_edit else 'مراسلة جديدة' }}{% endblock %}
+{% block page_title %}{{ '✏️ تعديل المراسلة' if is_edit else '✉️ إنشاء مراسلة جديدة' }}{% endblock %}
+{% block page_sub %}{{ item.ref_num if is_edit else 'تعبئة بيانات المراسلة' }}{% endblock %}
+{% block header_actions %}
+  {% if is_edit %}<a href="{{ url_for('view_correspondence', cid=item.id) }}" class="btn btn-ghost btn-sm">← رجوع</a>{% endif %}
+  {% if templates %}<button type="button" class="btn btn-outline btn-sm" onclick="toggleTemplates()">📋 قالب جاهز</button>{% endif %}
+{% endblock %}
+
+{% block content %}
+<!-- Templates Panel (hidden by default) -->
+{% if templates and not is_edit %}
+<div id="templatesPanel" style="display:none;margin-bottom:20px">
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">📋 اختر قالباً جاهزاً</div><button class="btn btn-ghost btn-xs" onclick="toggleTemplates()">✕ إغلاق</button></div>
+    <div style="padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+      {% for t in templates %}
+      <button type="button" class="btn btn-ghost" style="height:auto;padding:12px;flex-direction:column;align-items:flex-start;text-align:right"
+              onclick="loadTemplate('{{ t.id }}')">
+        <div style="font-weight:800;font-size:13px">{{ t.name }}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:3px">{{ t.category }}</div>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<form method="POST" enctype="multipart/form-data" id="corrForm">
+<div style="display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start">
+
+  <!-- Left: Main Form -->
+  <div style="display:flex;flex-direction:column;gap:0">
+
+    <!-- Basic Info -->
+    <div class="form-section">
+      <div class="form-section-hdr">📋 معلومات المراسلة الأساسية</div>
+      <div class="form-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> نوع المراسلة</label>
+            <select name="type" class="form-control" id="typeSelect" onchange="onTypeChange()">
+              <option value="out" {% if (form.type or 'out')=='out' %}selected{% endif %}>📤 صادر</option>
+              <option value="in"  {% if form.type=='in'  %}selected{% endif %}>📥 وارد</option>
+              <option value="internal" {% if form.type=='internal' %}selected{% endif %}>🔄 داخلي</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">تاريخ المراسلة</label>
+            <input type="date" name="date" class="form-control" value="{{ form.date or today() }}">
+          </div>
+          <div class="form-group form-full">
+            <label class="form-label"><span class="req">*</span> موضوع المراسلة</label>
+            <input type="text" name="subject" class="form-control" value="{{ form.subject or '' }}"
+                   placeholder="اكتب موضوع المراسلة بوضوح ودقة..." required id="subjectInput">
+          </div>
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> الجهة (المُرسَل إليها أو المُرسِلة)</label>
+            <input type="text" name="party" class="form-control" value="{{ form.party or '' }}"
+                   placeholder="اسم الشركة أو الجهة الحكومية" required id="partyInput" list="contactsList">
+            <datalist id="contactsList">
+              {% for ct in contacts %}<option value="{{ ct.name }}">{% endfor %}
+            </datalist>
+          </div>
+          <div class="form-group">
+            <label class="form-label">رقم مرجع الطرف الآخر</label>
+            <input type="text" name="party_ref" class="form-control" value="{{ form.party_ref or '' }}"
+                   placeholder="رقم الخطاب الوارد منهم (اختياري)">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Classification -->
+    <div class="form-section">
+      <div class="form-section-hdr">🏷️ التصنيف والأولوية</div>
+      <div class="form-body">
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">التصنيف الموضوعي</label>
+            <select name="category" class="form-control">
+              <option value="general"     {% if form.category=='general'     %}selected{% endif %}>📄 عام</option>
+              <option value="contract"    {% if form.category=='contract'    %}selected{% endif %}>📑 عقود وتعاقدات</option>
+              <option value="tender"      {% if form.category=='tender'      %}selected{% endif %}>🏷️ مناقصات وعروض</option>
+              <option value="procurement" {% if form.category=='procurement' %}selected{% endif %}>🛒 مشتريات وتوريد</option>
+              <option value="legal"       {% if form.category=='legal'       %}selected{% endif %}>⚖️ قانوني ونزاعات</option>
+              <option value="financial"   {% if form.category=='financial'   %}selected{% endif %}>💰 مالي ومحاسبي</option>
+              <option value="hr"          {% if form.category=='hr'          %}selected{% endif %}>👥 موارد بشرية</option>
+              <option value="technical"   {% if form.category=='technical'   %}selected{% endif %}>🔧 فني وهندسي</option>
+              <option value="report"      {% if form.category=='report'      %}selected{% endif %}>📊 تقارير ومستجدات</option>
+              <option value="approval"    {% if form.category=='approval'    %}selected{% endif %}>✅ موافقات واعتمادات</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">الأولوية</label>
+            <select name="priority" class="form-control">
+              <option value="low"    {% if form.priority=='low'    %}selected{% endif %}>⚪ منخفضة</option>
+              <option value="normal" {% if (form.priority or 'normal')=='normal' %}selected{% endif %}>🔵 عادية</option>
+              <option value="high"   {% if form.priority=='high'   %}selected{% endif %}>🔴 عالية</option>
+              <option value="urgent" {% if form.priority=='urgent' %}selected{% endif %}>⚡ عاجل جداً</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">درجة السرية</label>
+            <select name="classification" class="form-control">
+              <option value="normal" {% if (form.classification or 'normal')=='normal' %}selected{% endif %}>📄 عادي</option>
+              <option value="confidential" {% if form.classification=='confidential' %}selected{% endif %}>🔒 سري</option>
+              <option value="top_secret" {% if form.classification=='top_secret' %}selected{% endif %}>🔐 سري للغاية</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">المشروع</label>
+            <select name="project_id" class="form-control">
+              <option value="">— بدون مشروع —</option>
+              {% for p in projects %}
+              <option value="{{ p.id }}" {% if form.project_id==p.id %}selected{% endif %}>{{ p.code }} — {{ p.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">تاريخ الاستحقاق</label>
+            <input type="date" name="due_date" class="form-control" value="{{ form.due_date or '' }}">
+          </div>
+          <div class="form-group" id="replyStatusGroup" style="display:none">
+            <label class="form-label">حالة الرد</label>
+            <select name="reply_status" class="form-control">
+              <option value="pending"      {% if (form.reply_status or 'pending')=='pending'      %}selected{% endif %}>⏳ في الانتظار</option>
+              <option value="replied"      {% if form.reply_status=='replied'      %}selected{% endif %}>✅ تم الرد</option>
+              <option value="not_required" {% if form.reply_status=='not_required' %}selected{% endif %}>ℹ️ لا يحتاج رداً</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="form-section">
+      <div class="form-section-hdr">📝 نص المراسلة</div>
+      <div class="form-body">
+        <div class="form-group">
+          <textarea name="body" class="form-control" id="bodyText" style="min-height:200px"
+                    placeholder="اكتب نص المراسلة هنا...&#10;&#10;السادة / [الجهة]&#10;المحترمين&#10;&#10;السلام عليكم ورحمة الله وبركاته,&#10;...">{{ form.body or '' }}</textarea>
+        </div>
+        <div class="form-group mt-8">
+          <label class="form-label">الإجراء المطلوب</label>
+          <input type="text" name="action_required" class="form-control" value="{{ form.action_required or '' }}"
+                 placeholder="مثال: الرجاء الموافقة والرد خلال 7 أيام عمل">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Status + Attachments -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- Status -->
+    <div class="form-section" style="margin-bottom:0">
+      <div class="form-section-hdr">📌 حالة المراسلة</div>
+      <div class="form-body">
+        <div class="form-group">
+          <select name="status" class="form-control">
+            <option value="draft"   {% if (form.status or 'draft')=='draft'   %}selected{% endif %}>📝 مسودة</option>
+            <option value="pending" {% if form.status=='pending' %}selected{% endif %}>⏳ للمراجعة والاعتماد</option>
+            <option value="sent"    {% if form.status=='sent'    %}selected{% endif %}>📤 مُرسل</option>
+            <option value="received"{% if form.status=='received'%}selected{% endif %}>📥 مستلم</option>
+          </select>
+        </div>
+        <div class="form-hint">اختر "للمراجعة والاعتماد" لبدء سير عمل الموافقات</div>
+      </div>
+    </div>
+
+    <!-- Attachments -->
+    <div class="form-section" style="margin-bottom:0">
+      <div class="form-section-hdr">📎 المرفقات</div>
+      <div class="form-body">
+        <div class="form-group">
+          <label class="form-label">رفع ملفات (PDF, Word, صور)</label>
+          <input type="file" name="attachments" class="form-control" multiple
+                 accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.xls,.xlsx">
+          <div class="form-hint">الحد الأقصى 50 ميجابايت لكل ملف — يمكن رفع ملفات متعددة</div>
+        </div>
+        {% if attachments %}
+        <div style="margin-top:10px">
+          <div class="fs-12 text-muted" style="margin-bottom:8px;font-weight:700">المرفقات الحالية:</div>
+          {% for a in attachments %}
+          <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:rgba(0,119,182,.08);border:1px solid var(--border);border-radius:var(--rs);margin-bottom:6px">
+            <span>📎</span>
+            <span class="fs-12 truncate" style="flex:1">{{ a.original_name }}</span>
+            <a href="{{ url_for('download_attachment', att_id=a.id) }}" class="btn btn-ghost btn-xs" target="_blank">⬇</a>
+            {% if can_delete %}
+            <form method="POST" action="{{ url_for('delete_attachment', att_id=a.id) }}" style="display:inline">
+              <input type="hidden" name="cid" value="{{ item.id if item else '' }}">
+              <button type="submit" class="btn btn-danger btn-xs">✕</button>
+            </form>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button type="submit" class="btn btn-electric btn-lg">
+        {{ '💾 حفظ التعديلات' if is_edit else '✅ إنشاء المراسلة' }}
+      </button>
+      {% if is_edit %}
+      <a href="{{ url_for('view_correspondence', cid=item.id) }}" class="btn btn-ghost">إلغاء</a>
+      <a href="{{ url_for('export_pdf', cid=item.id) }}" class="btn btn-outline" target="_blank">📄 طباعة PDF</a>
+      {% else %}
+      <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">إلغاء</a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function onTypeChange(){
+  const t=document.getElementById('typeSelect').value;
+  document.getElementById('replyStatusGroup').style.display=(t=='in')?'flex':'none';
+}
+onTypeChange();
+
+function toggleTemplates(){
+  const p=document.getElementById('templatesPanel');
+  p.style.display=p.style.display==='none'?'block':'none';
+}
+
+function loadTemplate(tid){
+  fetch('/api/templates/'+tid)
+    .then(r=>r.json()).then(t=>{
+      document.getElementById('subjectInput').value=t.subject_template||'';
+      document.getElementById('bodyText').value=t.body_template||'';
+      toggleTemplates();
+    });
+}
+
+// Word count
+document.getElementById('bodyText').addEventListener('input',function(){
+  const words=this.value.trim().split(/\s+/).filter(w=>w).length;
+  let hint=this.nextElementSibling;
+  if(!hint||!hint.classList.contains('word-count')){
+    hint=document.createElement('div');
+    hint.className='form-hint word-count';
+    this.parentNode.appendChild(hint);
+  }
+  hint.textContent=`عدد الكلمات: ${words}`;
+});
+</script>
+{% endblock %}

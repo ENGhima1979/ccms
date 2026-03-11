@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block title %}شركة جديدة{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-building-add"></i> إضافة شركة جديدة</h1>
+  <a href="{{ url_for('super_admin') }}" class="btn btn-ghost">
+    <i class="bi bi-arrow-right"></i> رجوع
+  </a>
+</div>
+<div class="card" style="max-width:640px">
+  <div class="card-header"><h6 class="mb-0">بيانات الشركة والمدير</h6></div>
+  <div class="card-body">
+    <form method="POST">
+      <div class="row g-3">
+        <div class="col-md-8">
+          <label class="form-label">اسم الشركة *</label>
+          <input type="text" name="name" class="form-control" required placeholder="مجموعة الإنشاء المتحدة">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">كود الشركة *</label>
+          <input type="text" name="code" class="form-control" required placeholder="MUI" maxlength="10" style="text-transform:uppercase">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">البريد الإلكتروني</label>
+          <input type="email" name="email" class="form-control" placeholder="info@company.com">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">الهاتف</label>
+          <input type="text" name="phone" class="form-control" placeholder="+966 5x xxx xxxx">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">المدينة</label>
+          <input type="text" name="city" class="form-control" placeholder="الرياض">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">الدولة</label>
+          <select name="country" class="form-select">
+            <option value="SA" selected>🇸🇦 المملكة العربية السعودية</option>
+            <option value="AE">🇦🇪 الإمارات</option>
+            <option value="KW">🇰🇼 الكويت</option>
+            <option value="QA">🇶🇦 قطر</option>
+            <option value="BH">🇧🇭 البحرين</option>
+            <option value="OM">🇴🇲 عُمان</option>
+          </select>
+        </div>
+      </div>
+      <hr style="border-color:var(--border);margin:20px 0">
+      <h6 class="mb-3" style="color:var(--sky)">👤 بيانات المدير الافتراضي</h6>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">اسم المستخدم</label>
+          <input type="text" name="admin_username" class="form-control" placeholder="company_admin">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">كلمة المرور</label>
+          <input type="text" name="admin_password" class="form-control" value="Admin@2025">
+        </div>
+        <div class="col-12">
+          <label class="form-label">الاسم الكامل للمدير</label>
+          <input type="text" name="admin_name" class="form-control" placeholder="مدير النظام">
+        </div>
+      </div>
+      <div class="d-flex gap-2 mt-4">
+        <button type="submit" class="btn btn-electric btn-lg">
+          <i class="bi bi-building-add"></i> إنشاء الشركة
+        </button>
+        <a href="{{ url_for('super_admin') }}" class="btn btn-ghost btn-lg">إلغاء</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

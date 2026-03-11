@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% block title %}استقبال البريد الإلكتروني{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-envelope-arrow-down"></i> استقبال البريد الإلكتروني تلقائياً</h1>
+  <button class="btn btn-electric" id="fetchNowBtn" onclick="fetchNow()" {% if not cfg.get('enabled') %}disabled{% endif %}>
+    <i class="bi bi-arrow-repeat"></i> جلب الآن
+  </button>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h6 class="mb-0">⚙️ إعدادات IMAP</h6>
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="enabledSwitch" {{ 'checked' if cfg.get('enabled') }}>
+          <label class="form-check-label" for="enabledSwitch">تفعيل الاستقبال التلقائي</label>
+        </div>
+      </div>
+      <div class="card-body">
+        <form method="POST" action="{{ url_for('save_email_ingestion') }}">
+          <input type="hidden" name="enabled" id="enabledHidden" value="{{ 1 if cfg.get('enabled') else 0 }}">
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label">خادم IMAP</label>
+              <input type="text" name="imap_host" class="form-control" value="{{ cfg.get('imap_host','') }}" placeholder="imap.gmail.com">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">المنفذ</label>
+              <input type="number" name="imap_port" class="form-control" value="{{ cfg.get('imap_port',993) }}">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">البريد الإلكتروني</label>
+              <input type="email" name="imap_user" class="form-control" value="{{ cfg.get('imap_user','') }}" placeholder="inbox@company.com">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">كلمة المرور / App Password</label>
+              <input type="password" name="imap_password" class="form-control" placeholder="{{ '••••••••' if cfg.get('imap_password') else 'كلمة المرور' }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">مجلد البريد</label>
+              <input type="text" name="imap_folder" class="form-control" value="{{ cfg.get('imap_folder','INBOX') }}">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">تصنيف المعاملة</label>
+              <select name="auto_category" class="form-select">
+                <option value="incoming" {{ 'selected' if cfg.get('auto_category','incoming')=='incoming' }}>وارد</option>
+                <option value="general"  {{ 'selected' if cfg.get('auto_category')=='general' }}>عام</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">الفحص كل (دقيقة)</label>
+              <input type="number" name="check_interval" class="form-control" value="{{ cfg.get('check_interval',15) }}" min="5">
+            </div>
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="mark_read" value="1" id="markRead" {{ 'checked' if cfg.get('mark_read',1) }}>
+                <label class="form-check-label" for="markRead">تحديد الرسائل كمقروءة بعد الاستيراد</label>
+              </div>
+            </div>
+          </div>
+          <div class="alert alert-secondary mt-3">
+            <i class="bi bi-lightbulb"></i>
+            <strong>Gmail:</strong> فعّل IMAP من الإعدادات، ثم أنشئ App Password من <a href="https://myaccount.google.com/apppasswords" target="_blank">هنا</a>
+          </div>
+          <button type="submit" class="btn btn-electric mt-2">
+            <i class="bi bi-save"></i> حفظ الإعدادات
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card mb-3" style="border-color:{% if cfg.get('enabled') %}var(--mint){% else %}var(--border){% endif %}">
+      <div class="card-body text-center py-4">
+        <div style="font-size:48px;margin-bottom:12px">{% if cfg.get('enabled') %}✅{% else %}⏸️{% endif %}</div>
+        <div style="font-size:16px;font-weight:700;color:{% if cfg.get('enabled') %}var(--mint){% else %}var(--text3){% endif %}">
+          الاستقبال التلقائي {% if cfg.get('enabled') %}مفعّل{% else %}متوقف{% endif %}
+        </div>
+        {% if cfg.get('enabled') and cfg.get('imap_host') %}
+        <small class="text-muted">{{ cfg.get('imap_user','') }}</small><br>
+        <small class="text-muted">كل {{ cfg.get('check_interval',15) }} دقيقة</small>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">📬 آخر الرسائل المستوردة</h6></div>
+      <div class="card-body p-0">
+        {% for r in recent %}
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+          <div class="truncate fw-600" style="font-size:13px">{{ r.subject }}</div>
+          <div class="d-flex justify-content-between mt-1">
+            <small class="text-muted">{{ r.party }}</small>
+            <small class="text-muted">{{ r.date }}</small>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-center py-4 text-muted">
+          <i class="bi bi-inbox" style="font-size:32px;opacity:.3"></i>
+          <p class="mt-2 fs-12">لا توجد رسائل مستوردة بعد</p>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById('enabledSwitch').addEventListener('change', function(){
+  document.getElementById('enabledHidden').value = this.checked ? 1 : 0;
+});
+
+function fetchNow(){
+  const btn = document.getElementById('fetchNowBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border" style="width:14px;height:14px;margin-inline-end:6px"></span> جارٍ الجلب...';
+  fetch("{{ url_for('fetch_emails_now') }}", {method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{
+      if(d.success){
+        alert(`✅ تم استيراد ${d.imported} رسالة جديدة`);
+        if(d.imported > 0) location.reload();
+      } else {
+        alert('❌ ' + (d.error || 'حدث خطأ'));
+      }
+    })
+    .catch(e=>alert('خطأ: '+e.message))
+    .finally(()=>{
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-arrow-repeat"></i> جلب الآن';
+    });
+}
+</script>
+{% endblock %}

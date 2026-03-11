@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}الإشعارات{% endblock %}
+{% block page_title %}🔔 الإشعارات{% endblock %}
+{% block page_sub %}{{ notifs|length }} إشعار{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="panel-header">
+    <div class="panel-title">🔔 جميع الإشعارات</div>
+    <button class="btn btn-ghost btn-sm" onclick="markAllRead()">✅ تحديد الكل مقروء</button>
+  </div>
+  <div style="display:flex;flex-direction:column">
+    {% for n in notifs %}
+    <div style="padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px;{% if not n.is_read %}background:rgba(0,119,182,.06);{% endif %}">
+      <div style="font-size:22px;flex-shrink:0">
+        {{ '⏳' if n.type=='workflow' else ('💬' if n.type=='comment' else '🔔') }}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:{% if not n.is_read %}800{% else %}600{% endif %};color:{% if not n.is_read %}var(--text){% else %}var(--text2){% endif %}">
+          {{ n.title }}
+        </div>
+        {% if n.body %}<div style="font-size:12px;color:var(--text3);margin-top:3px">{{ n.body }}</div>{% endif %}
+        <div style="font-size:11px;color:var(--text3);margin-top:5px">{{ n.created_at|time_ago }}</div>
+      </div>
+      {% if n.link %}
+      <a href="{{ n.link }}" class="btn btn-ghost btn-xs" style="flex-shrink:0">عرض</a>
+      {% endif %}
+      {% if not n.is_read %}
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--sky);flex-shrink:0;margin-top:4px"></div>
+      {% endif %}
+    </div>
+    {% else %}
+    <div class="empty" style="padding:60px">
+      <div class="empty-icon">🔔</div>
+      <div class="empty-title">لا توجد إشعارات</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function markAllRead(){
+  fetch('/api/notifications/mark-read',{method:'POST'})
+    .then(()=>location.reload());
+}
+</script>
+{% endblock %}

@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% block title %}واجهة REST API{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title"><i class="bi bi-code-slash"></i> توثيق REST API</h1>
+  <div>
+    <span style="background:rgba(6,255,165,.1);color:var(--mint);border:1px solid rgba(6,255,165,.2);
+      padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">v1.0 — Active</span>
+  </div>
+</div>
+
+<!-- API Key -->
+<div class="card mb-4" style="border-color:var(--sky)">
+  <div class="card-header">
+    <h6 class="mb-0"><i class="bi bi-key-fill" style="color:var(--gold)"></i> مفتاح API الخاص بك</h6>
+  </div>
+  <div class="card-body">
+    {% if api_key %}
+    <div class="input-group">
+      <input type="password" id="apiKeyDisplay" value="{{ api_key }}" class="form-control" style="font-family:monospace" readonly>
+      <button class="btn btn-outline" onclick="toggleApiKey()"><i class="bi bi-eye" id="eyeIcon"></i></button>
+      <button class="btn btn-outline" onclick="copyApiKey()"><i class="bi bi-clipboard"></i></button>
+    </div>
+    <small class="text-muted mt-2 d-block">استخدم هذا المفتاح في header: <code style="color:var(--mint)">X-API-Key: YOUR_KEY</code></small>
+    {% else %}
+    <p class="text-muted mb-3">لا يوجد مفتاح API بعد</p>
+    {% endif %}
+    <form method="POST" action="{{ url_for('generate_api_key') }}" class="mt-3">
+      <button type="submit" class="btn btn-electric">
+        <i class="bi bi-arrow-clockwise"></i> {{ 'إعادة توليد' if api_key else 'توليد' }} مفتاح API
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Base URL -->
+<div class="alert alert-info mb-4">
+  <i class="bi bi-info-circle"></i>
+  <div>
+    <strong>Base URL:</strong>
+    <code style="color:var(--mint)">{{ base_url }}/api/v1</code>
+    &nbsp;|&nbsp; 
+    <strong>Auth Header:</strong>
+    <code style="color:var(--gold)">X-API-Key: YOUR_KEY</code>
+  </div>
+</div>
+
+<!-- Endpoints -->
+<div class="row g-3">
+  {% set endpoints = [
+    ('GET', '/health', 'فحص حالة النظام', 'لا يتطلب مصادقة', '#06ffa5'),
+    ('GET', '/stats', 'إحصاءات عامة', 'إجمالي المعاملات والمشاريع', '#00b4d8'),
+    ('GET', '/correspondence', 'قائمة المراسلات', 'params: type, status, q, page', '#00b4d8'),
+    ('GET', '/correspondence/{id}', 'تفاصيل معاملة', 'يتضمن المرفقات والتعليقات', '#00b4d8'),
+    ('POST', '/correspondence', 'إنشاء معاملة جديدة', 'subject, party, type مطلوبة', '#ffd60a'),
+    ('PUT', '/correspondence/{id}', 'تحديث معاملة', 'تحديث جزئي مدعوم', '#ff9f1c'),
+    ('GET', '/projects', 'قائمة المشاريع', 'المشاريع النشطة فقط', '#00b4d8'),
+    ('GET', '/contacts', 'قائمة جهات الاتصال', 'param: q للبحث', '#00b4d8'),
+  ] %}
+  {% for method, path, name, desc, color in endpoints %}
+  <div class="col-12">
+    <div class="card">
+      <div class="card-body" style="padding:14px 18px">
+        <div class="d-flex align-items-center gap-3 flex-wrap">
+          <span style="background:rgba(0,0,0,.3);color:{{ color }};border:1px solid {{ color }}40;
+            padding:3px 10px;border-radius:4px;font-size:11px;font-weight:700;
+            font-family:monospace;flex-shrink:0;min-width:48px;text-align:center">{{ method }}</span>
+          <code style="color:var(--text);font-size:13px;background:rgba(255,255,255,.05);
+            padding:4px 10px;border-radius:4px">{{ base_url }}/api/v1{{ path }}</code>
+          <span style="color:var(--text);font-weight:600;font-size:13px">{{ name }}</span>
+          <span class="text-muted fs-12 me-auto">{{ desc }}</span>
+          <button class="btn btn-outline btn-sm" onclick="testEndpoint('{{ method }}','{{ path }}')">
+            <i class="bi bi-play-fill"></i> تجربة
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Code Examples -->
+<div class="card mt-4">
+  <div class="card-header"><h6 class="mb-0"><i class="bi bi-terminal"></i> أمثلة تطبيقية</h6></div>
+  <div class="card-body">
+    <ul class="nav nav-tabs mb-3" id="codeTabs">
+      <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#curl-tab">cURL</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#python-tab">Python</a></li>
+      <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#js-tab">JavaScript</a></li>
+    </ul>
+    <div class="tab-content">
+      <div class="tab-pane show active" id="curl-tab">
+<pre style="background:#000;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;color:#06ffa5"><code># قائمة المراسلات
+curl -H "X-API-Key: {{ api_key or 'YOUR_KEY' }}" \
+     {{ base_url }}/api/v1/correspondence
+
+# إنشاء معاملة جديدة
+curl -X POST {{ base_url }}/api/v1/correspondence \
+     -H "X-API-Key: {{ api_key or 'YOUR_KEY' }}" \
+     -H "Content-Type: application/json" \
+     -d '{"subject":"اختبار API","party":"شركة تجريبية","type":"out"}'
+
+# الإحصاءات
+curl -H "X-API-Key: {{ api_key or 'YOUR_KEY' }}" \
+     {{ base_url }}/api/v1/stats</code></pre>
+      </div>
+      <div class="tab-pane" id="python-tab">
+<pre style="background:#000;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;color:#00b4d8"><code>import requests
+
+API_KEY = "{{ api_key or 'YOUR_KEY' }}"
+BASE    = "{{ base_url }}/api/v1"
+HEADERS = {"X-API-Key": API_KEY}
+
+# جلب المراسلات
+resp = requests.get(f"{BASE}/correspondence", headers=HEADERS)
+data = resp.json()
+for item in data["items"]:
+    print(item["ref_num"], item["subject"])
+
+# إنشاء معاملة
+new_corr = requests.post(f"{BASE}/correspondence", headers=HEADERS, json={
+    "subject": "طلب عرض أسعار",
+    "party": "شركة المقاولات العربية",
+    "type": "out",
+    "priority": "high"
+})
+print(new_corr.json())</code></pre>
+      </div>
+      <div class="tab-pane" id="js-tab">
+<pre style="background:#000;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;color:#ffd60a"><code>const API_KEY = '{{ api_key or "YOUR_KEY" }}';
+const BASE = '{{ base_url }}/api/v1';
+
+// جلب المراسلات
+const resp = await fetch(`${BASE}/correspondence`, {
+  headers: { 'X-API-Key': API_KEY }
+});
+const { items } = await resp.json();
+console.log(items);
+
+// إنشاء معاملة جديدة
+const create = await fetch(`${BASE}/correspondence`, {
+  method: 'POST',
+  headers: { 'X-API-Key': API_KEY, 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    subject: 'إشعار بالمستحقات المالية',
+    party: 'وزارة المالية',
+    type: 'out',
+    priority: 'urgent'
+  })
+});
+const result = await create.json();
+console.log('Created:', result.ref_num);</code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleApiKey(){
+  const el=document.getElementById('apiKeyDisplay');
+  const ic=document.getElementById('eyeIcon');
+  if(el.type==='password'){el.type='text';ic.className='bi bi-eye-slash'}
+  else{el.type='password';ic.className='bi bi-eye'}
+}
+function copyApiKey(){
+  const el=document.getElementById('apiKeyDisplay');
+  const val=el.value;
+  navigator.clipboard.writeText(val).then(()=>{
+    const b=event.target.closest('button');
+    b.innerHTML='<i class="bi bi-check-lg"></i>';
+    setTimeout(()=>b.innerHTML='<i class="bi bi-clipboard"></i>',2000);
+  });
+}
+function testEndpoint(method, path){
+  const key='{{ api_key or "" }}';
+  if(!key){alert('يرجى توليد مفتاح API أولاً');return}
+  const url='{{ base_url }}/api/v1'+path.replace('{id}','test');
+  if(method==='GET') window.open(url+'?api_key='+key,'_blank');
+}
+</script>
+{% endblock %}

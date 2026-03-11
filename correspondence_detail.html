@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+{% block title %}{{ item.ref_num }}
+<script>
+const corrId = "{{ item.id }}";
+
+// Load existing AI data on page load
+fetch(`/correspondence/${corrId}/ai-data`)
+  .then(r => r.json())
+  .then(data => {
+    if (data.exists) showAiResult(data.data);
+  });
+
+function runAiAnalysis() {
+  document.getElementById('aiLoading').style.display = '';
+  document.getElementById('aiEmpty').style.display = 'none';
+  document.getElementById('aiResult').style.display = 'none';
+  document.getElementById('aiAnalyzeBtn').disabled = true;
+  document.getElementById('aiAnalyzeBtn').textContent = '⏳ جارٍ التحليل...';
+
+  fetch(`/correspondence/${corrId}/analyze`, { method: 'POST',
+    headers: { 'Content-Type': 'application/json' } })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('aiLoading').style.display = 'none';
+      document.getElementById('aiAnalyzeBtn').disabled = false;
+      document.getElementById('aiAnalyzeBtn').textContent = '🔄 إعادة التحليل';
+      if (data.error) {
+        alert('خطأ: ' + data.error);
+        document.getElementById('aiEmpty').style.display = '';
+        return;
+      }
+      showAiResult(data.data);
+    })
+    .catch(e => {
+      document.getElementById('aiLoading').style.display = 'none';
+      document.getElementById('aiAnalyzeBtn').disabled = false;
+      document.getElementById('aiAnalyzeBtn').textContent = '✨ تحليل الآن';
+      alert('خطأ في الاتصال: ' + e.message);
+      document.getElementById('aiEmpty').style.display = '';
+    });
+}
+
+function showAiResult(d) {
+  const priorityMap = { urgent: '⚡ عاجل', high: '▲ عالية', normal: '● عادية', low: '▽ منخفضة' };
+  const sentimentMap = { positive: '😊 إيجابي', neutral: '😐 محايد', negative: '😟 سلبي', urgent: '🚨 عاجل' };
+  
+  document.getElementById('aiCategory').textContent = d.ai_category || d.category || '—';
+  document.getElementById('aiSubcat').textContent = d.ai_subcategory || d.subcategory || '';
+  document.getElementById('aiPriority').textContent = priorityMap[d.ai_priority || d.priority] || d.ai_priority || '—';
+  document.getElementById('aiSentiment').textContent = sentimentMap[d.ai_sentiment || d.sentiment] || '—';
+  document.getElementById('aiSummary').textContent = d.ai_summary || d.summary || '—';
+  document.getElementById('aiReply').textContent = d.ai_suggested_reply || d.suggested_reply || '—';
+
+  const keywords = d.ai_keywords || d.keywords || [];
+  const kw = Array.isArray(keywords) ? keywords : JSON.parse(keywords || '[]');
+  document.getElementById('aiKeywords').innerHTML = kw.map(k =>
+    `<span style="display:inline-block;background:rgba(167,139,250,.2);color:#a78bfa;border-radius:4px;padding:1px 6px;font-size:10px;margin:1px">${k}</span>`
+  ).join('');
+
+  const actions = d.ai_action_items || d.action_items || [];
+  const acts = Array.isArray(actions) ? actions : JSON.parse(actions || '[]');
+  document.getElementById('aiActionItems').innerHTML = acts.map(a => `<li>${a}</li>`).join('');
+  document.getElementById('aiActionsBlock').style.display = acts.length ? '' : 'none';
+
+  document.getElementById('aiResult').style.display = '';
+  document.getElementById('aiEmpty').style.display = 'none';
+  document.getElementById('aiAnalyzeBtn').textContent = '🔄 إعادة التحليل';
+}
+
+function copyReply() {
+  const text = document.getElementById('aiReply').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = event.target.closest('button');
+    btn.textContent = '✓ تم النسخ';
+    setTimeout(() => btn.innerHTML = '<i class="bi bi-clipboard"></i> نسخ', 2000);
+  });
+}
+</script>
+
+{% endblock %}
+{% block page_title %}📋 {{ item.ref_num }}{% endblock %}
+{% block page_sub %}{{ item.subject[:60] }}{% endblock %}
+{% block header_actions %}
+  <a href="{{ url_for('edit_correspondence', cid=item.id) }}" class="btn btn-warn btn-sm">✏️ تعديل</a>
+  <a href="{{ url_for('export_pdf', cid=item.id) }}" class="btn btn-outline btn-sm" target="_blank">📄 PDF</a>
+  {% if not item.archived %}
+  <form method="POST" action="{{ url_for('archive_correspondence', cid=item.id) }}" style="display:inline">
+    <button class="btn btn-ghost btn-sm">🗄️ أرشفة</button>
+  </form>
+  {% endif %}
+  {% if can_delete %}
+  <button class="btn btn-danger btn-sm no-print"
+    onclick="confirmAction('{{ url_for('delete_correspondence', cid=item.id) }}','حذف المراسلة','سيتم حذف هذه المراسلة نهائياً. هل أنت متأكد؟')">🗑️ حذف</button>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start">
+
+  <!-- Left: Main Info -->
+  <div style="display:flex;flex-direction:column;gap:20px">
+
+    <!-- Header Card -->
+    <div class="panel">
+      <div style="padding:20px;border-bottom:1px solid var(--border);background:linear-gradient(135deg,rgba(0,119,182,.12),rgba(0,20,80,.4))">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+              <span class="badge badge-{{ item.type }}">{{ '📤 صادر' if item.type=='out' else ('📥 وارد' if item.type=='in' else '🔄 داخلي') }}</span>
+              <span class="badge badge-{{ item.priority }}">{{ item.priority|priority_label }}</span>
+              <span class="badge badge-{{ item.status }}">{{ item.status|status_label }}</span>
+              {% if item.classification!='normal' %}
+              <span class="badge" style="background:rgba(255,56,96,.15);color:var(--danger);border-color:rgba(255,56,96,.3)">
+                🔒 {{ 'سري' if item.classification=='confidential' else 'سري للغاية' }}
+              </span>
+              {% endif %}
+            </div>
+            <h2 style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:8px;line-height:1.4">{{ item.subject }}</h2>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:12px;color:var(--text3)">
+              <span>📅 {{ item.date|ar_date }}</span>
+              <span>🏢 {{ item.party }}</span>
+              {% if item.party_ref %}<span>🔗 مرجع الطرف: {{ item.party_ref }}</span>{% endif %}
+              {% if item.proj_name %}
+              <span style="display:flex;align-items:center;gap:5px">
+                <span style="width:8px;height:8px;border-radius:50%;background:{{ item.proj_color or '#00b4d8' }}"></span>
+                {{ item.proj_name }}
+              </span>
+              {% endif %}
+              {% if item.creator_name %}<span>✍️ {{ item.creator_name }}</span>{% endif %}
+            </div>
+          </div>
+          {% if qr_img %}
+          <div style="text-align:center;flex-shrink:0">
+            <img src="{{ qr_img }}" style="width:80px;height:80px;border-radius:8px;border:2px solid var(--border)">
+            <div style="font-size:9px;color:var(--text3);margin-top:4px">QR التحقق</div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Body -->
+      {% if item.body %}
+      <div style="padding:20px">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">نص المراسلة</div>
+        <div style="background:rgba(0,20,80,.3);border:1px solid var(--border);border-radius:var(--rs);padding:18px;font-size:14px;line-height:2;color:var(--text);white-space:pre-line">{{ item.body }}</div>
+      </div>
+      {% endif %}
+
+      {% if item.action_required %}
+      <div style="padding:0 20px 20px">
+        <div style="background:rgba(255,159,28,.08);border:1px solid rgba(255,159,28,.25);border-radius:var(--rs);padding:14px 16px">
+          <div style="font-size:12px;font-weight:800;color:var(--warn);margin-bottom:6px">⚡ الإجراء المطلوب</div>
+          <div style="font-size:13px;color:var(--text2)">{{ item.action_required }}</div>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Workflow -->
+    {% if wf_steps %}
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">🔄 سير عمل الموافقات</div>
+        <span class="badge badge-{{ item.workflow_status or 'pending' }}">{{ item.workflow_status|status_label }}</span>
+      </div>
+      <div class="panel-body">
+        <div class="timeline">
+          {% for step in wf_steps %}
+          <div class="tl-item">
+            <div class="tl-dot {% if step.status=='approved' or step.status=='done' %}done{% elif step.status=='pending' %}active{% elif step.status=='rejected' %}rejected{% endif %}">
+              {{ '✓' if step.status in ('approved','done') else ('✗' if step.status=='rejected' else step.step_number) }}
+            </div>
+            <div class="tl-content">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div class="tl-title">{{ step.step_name }}</div>
+                <span class="badge badge-{{ step.status }}">{{ step.status|status_label }}</span>
+              </div>
+              {% if step.assignee_name %}<div class="tl-sub">المسؤول: {{ step.assignee_name }}</div>{% endif %}
+              {% if step.note %}<div class="tl-sub" style="color:var(--warn);margin-top:4px">📝 {{ step.note }}</div>{% endif %}
+              {% if step.completed_at %}<div class="tl-sub">{{ step.completed_at[:10]|ar_date }}</div>{% endif %}
+
+              {% if step.status=='pending' and step.assigned_to==current_user.id %}
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <form method="POST" action="{{ url_for('workflow_action', step_id=step.id) }}" style="flex:1">
+                  <input type="hidden" name="action" value="approve">
+                  <textarea name="note" placeholder="ملاحظة (اختياري)" class="form-control" style="min-height:50px;margin-bottom:6px"></textarea>
+                  <button class="btn btn-mint btn-sm" style="width:100%">✅ موافقة</button>
+                </form>
+                <form method="POST" action="{{ url_for('workflow_action', step_id=step.id) }}" style="flex:1">
+                  <input type="hidden" name="action" value="reject">
+                  <textarea name="note" placeholder="سبب الرفض (مطلوب)" class="form-control" style="min-height:50px;margin-bottom:6px"></textarea>
+                  <button class="btn btn-danger btn-sm" style="width:100%">❌ رفض</button>
+                </form>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Attachments -->
+    {% if attachments %}
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">📎 المرفقات ({{ attachments|length }})</div></div>
+      <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+        {% for a in attachments %}
+        <div style="padding:12px;background:rgba(0,119,182,.06);border:1px solid var(--border);border-radius:var(--rs);display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:22px">{{ '📄' if 'pdf' in a.mime_type else ('🖼️' if 'image' in a.mime_type else '📎') }}</div>
+          <div style="font-size:12px;font-weight:700;color:var(--text);line-break:anywhere">{{ a.original_name }}</div>
+          <div style="font-size:11px;color:var(--text3)">{{ a.file_size|filesize }} · {{ a.uploaded_at[:10]|ar_date }}</div>
+          <div style="display:flex;gap:6px">
+            <a href="{{ url_for('download_attachment', att_id=a.id) }}" class="btn btn-outline btn-xs" style="flex:1;justify-content:center" target="_blank">⬇️ تنزيل</a>
+            {% if can_delete %}
+            <form method="POST" action="{{ url_for('delete_attachment', att_id=a.id) }}" style="display:inline">
+              <input type="hidden" name="cid" value="{{ item.id }}">
+              <button type="submit" class="btn btn-danger btn-xs">✕</button>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Comments -->
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">💬 التعليقات والملاحظات ({{ comments|length }})</div></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:12px">
+        {% for cm in comments %}
+        <div style="padding:12px 14px;background:rgba({{ '0,20,80' if not cm.is_private else '123,47,255' }},.12);border:1px solid rgba({{ '26,48,144' if not cm.is_private else '168,85,247' }},.4);border-radius:var(--rs)">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <div style="font-size:12px;font-weight:800;color:var(--sky)">{{ cm.full_name }}</div>
+            <div style="display:flex;align-items:center;gap:8px">
+              {% if cm.is_private %}<span class="badge" style="background:rgba(123,47,255,.12);color:var(--violet);border-color:rgba(168,85,247,.3);font-size:10px">🔒 خاص</span>{% endif %}
+              <span style="font-size:11px;color:var(--text3)">{{ cm.created_at|time_ago }}</span>
+            </div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;white-space:pre-line">{{ cm.body }}</div>
+        </div>
+        {% else %}
+        <div style="text-align:center;color:var(--text3);font-size:13px;padding:20px">لا توجد تعليقات بعد</div>
+        {% endfor %}
+
+        
+      <!-- ─── AI Analysis Panel ─────────────────────────── -->
+      <div class="panel" id="aiPanel">
+        <div class="panel-header d-flex justify-content-between align-items-center">
+          <div class="panel-title">🤖 تحليل الذكاء الاصطناعي</div>
+          <button class="btn btn-sm" id="aiAnalyzeBtn" onclick="runAiAnalysis()"
+            style="background:linear-gradient(135deg,#00b4d8,#06ffa5);color:#000;font-weight:600">
+            ✨ تحليل الآن
+          </button>
+        </div>
+        <div id="aiContent" style="padding:16px">
+          <div id="aiLoading" style="display:none;text-align:center;padding:20px">
+            <div class="spinner-border text-info"></div>
+            <p class="mt-2 text-muted">جارٍ التحليل بالذكاء الاصطناعي...</p>
+          </div>
+          <div id="aiEmpty" class="text-center text-muted py-3">
+            <div style="font-size:2.5rem;margin-bottom:8px">🤖</div>
+            <p>اضغط "تحليل الآن" لتحليل هذه المعاملة بالذكاء الاصطناعي</p>
+            <small>يتضمن: التصنيف، الملخص، الإجراءات المطلوبة، ومقترح الرد</small>
+          </div>
+          <div id="aiResult" style="display:none">
+            <div class="row g-3 mb-3">
+              <div class="col-sm-6 col-md-3">
+                <div style="background:rgba(0,180,216,.1);border:1px solid rgba(0,180,216,.2);border-radius:8px;padding:12px;text-align:center">
+                  <div style="font-size:11px;color:#a0aec0;margin-bottom:4px">التصنيف</div>
+                  <div id="aiCategory" style="font-weight:600;color:#00b4d8">—</div>
+                  <div id="aiSubcat" style="font-size:11px;color:#a0aec0">—</div>
+                </div>
+              </div>
+              <div class="col-sm-6 col-md-3">
+                <div style="background:rgba(6,255,165,.1);border:1px solid rgba(6,255,165,.2);border-radius:8px;padding:12px;text-align:center">
+                  <div style="font-size:11px;color:#a0aec0;margin-bottom:4px">الأولوية المقترحة</div>
+                  <div id="aiPriority" style="font-weight:600;color:#06ffa5">—</div>
+                </div>
+              </div>
+              <div class="col-sm-6 col-md-3">
+                <div style="background:rgba(255,209,102,.1);border:1px solid rgba(255,209,102,.2);border-radius:8px;padding:12px;text-align:center">
+                  <div style="font-size:11px;color:#a0aec0;margin-bottom:4px">المشاعر</div>
+                  <div id="aiSentiment" style="font-weight:600;color:#ffd166">—</div>
+                </div>
+              </div>
+              <div class="col-sm-6 col-md-3">
+                <div style="background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.2);border-radius:8px;padding:12px;text-align:center">
+                  <div style="font-size:11px;color:#a0aec0;margin-bottom:4px">الكلمات المفتاحية</div>
+                  <div id="aiKeywords">—</div>
+                </div>
+              </div>
+            </div>
+            <div style="background:var(--bg-card);border-radius:8px;padding:14px;margin-bottom:12px">
+              <div style="font-size:12px;color:#a0aec0;margin-bottom:6px">📋 الملخص التلقائي</div>
+              <div id="aiSummary" style="font-size:14px;line-height:1.7">—</div>
+            </div>
+            <div style="background:var(--bg-card);border-radius:8px;padding:14px;margin-bottom:12px" id="aiActionsBlock">
+              <div style="font-size:12px;color:#a0aec0;margin-bottom:6px">✅ الإجراءات المطلوبة</div>
+              <ul id="aiActionItems" style="margin:0;padding-right:20px;font-size:14px"></ul>
+            </div>
+            <div style="background:linear-gradient(135deg,rgba(0,180,216,.08),rgba(6,255,165,.05));border:1px solid rgba(0,180,216,.2);border-radius:8px;padding:14px">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div style="font-size:12px;color:#a0aec0">✍️ مقترح الرد</div>
+                <button class="btn btn-sm btn-outline-info" onclick="copyReply()">
+                  <i class="bi bi-clipboard"></i> نسخ
+                </button>
+              </div>
+              <div id="aiReply" style="font-size:14px;line-height:1.8;white-space:pre-wrap">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+<!-- Add comment -->
+        <form method="POST" action="{{ url_for('add_comment', cid=item.id) }}" style="margin-top:8px">
+          <textarea name="body" class="form-control" placeholder="أضف ملاحظة أو تعليقاً..." style="min-height:70px;margin-bottom:8px"></textarea>
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <label class="form-check" style="font-size:12px">
+              <input type="checkbox" name="is_private" value="1">
+              <span>🔒 خاص (لا يراه إلا المدراء)</span>
+            </label>
+            <button type="submit" class="btn btn-primary btn-sm">إرسال التعليق</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: Meta Info -->
+  <div style="display:flex;flex-direction:column;gap:16px">
+
+    <!-- Info Card -->
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">ℹ️ تفاصيل المراسلة</div></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:10px">
+        {% macro meta_row(icon, label, value) %}
+        {% if value %}
+        <div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px solid rgba(26,48,144,.3)">
+          <span style="font-size:14px;flex-shrink:0;width:22px;text-align:center">{{ icon }}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.05em">{{ label }}</div>
+            <div style="font-size:13px;color:var(--text);margin-top:2px;word-break:break-all">{{ value }}</div>
+          </div>
+        </div>
+        {% endif %}
+        {% endmacro %}
+        {{ meta_row('🔢','رقم المرجع',item.ref_num) }}
+        {{ meta_row('📅','التاريخ',item.date|ar_date) }}
+        {{ meta_row('🏢','الجهة',item.party) }}
+        {{ meta_row('🏗️','المشروع',item.proj_name) }}
+        {{ meta_row('📂','التصنيف',item.category) }}
+        {{ meta_row('👤','المنشئ',item.creator_name) }}
+        {{ meta_row('📅','تاريخ الإنشاء',item.created_at[:10]|ar_date) }}
+        {% if item.due_date %}{{ meta_row('⏰','موعد الاستحقاق',item.due_date|ar_date) }}{% endif %}
+        {% if item.updated_at %}{{ meta_row('🔄','آخر تعديل',item.updated_at[:10]|ar_date) }}{% endif %}
+      </div>
+    </div>
+
+    <!-- Reply Status (for incoming) -->
+    {% if item.type=='in' %}
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">💬 حالة الرد</div></div>
+      <div class="panel-body">
+        <div class="text-center" style="margin-bottom:12px">
+          <span class="badge badge-{{ item.reply_status }}" style="font-size:14px;padding:8px 16px">
+            {{ item.reply_status|reply_label }}
+          </span>
+        </div>
+        {% if item.reply_status=='pending' %}
+        <div style="font-size:12px;color:var(--warn);text-align:center">⚠️ يستلزم الرد</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Related -->
+    {% if related %}
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">🔗 مراسلات مرتبطة</div></div>
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:8px">
+        {% for r in related %}
+        <a href="{{ url_for('view_correspondence', cid=r.id) }}" style="display:block;padding:10px;background:rgba(0,119,182,.06);border:1px solid var(--border);border-radius:var(--rs)">
+          <div style="font-size:11px;font-family:monospace;color:var(--sky)">{{ r.ref_num }}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px" class="truncate">{{ r.subject }}</div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Quick Actions -->
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <a href="{{ url_for('edit_correspondence', cid=item.id) }}" class="btn btn-warn">✏️ تعديل المراسلة</a>
+      <a href="{{ url_for('export_pdf', cid=item.id) }}" class="btn btn-outline" target="_blank">📄 تنزيل PDF</a>
+      {% if not item.archived %}
+      <form method="POST" action="{{ url_for('archive_correspondence', cid=item.id) }}">
+        <button type="submit" class="btn btn-ghost" style="width:100%">🗄️ أرشفة</button>
+      </form>
+      {% endif %}
+      {% if can_delete %}
+      <button class="btn btn-danger"
+        onclick="confirmAction('{{ url_for('delete_correspondence', cid=item.id) }}','حذف المراسلة','سيتم حذف هذه المراسلة نهائياً.')">🗑️ حذف نهائي</button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

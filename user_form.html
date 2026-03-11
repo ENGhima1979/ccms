@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% set is_edit = uid is defined and uid %}
+{% block title %}{{ 'تعديل مستخدم' if is_edit else 'مستخدم جديد' }}{% endblock %}
+{% block page_title %}{{ '✏️ تعديل بيانات المستخدم' if is_edit else '👤 إضافة مستخدم جديد' }}{% endblock %}
+{% block header_actions %}<a href="{{ url_for('users') }}" class="btn btn-ghost btn-sm">← رجوع</a>{% endblock %}
+{% block content %}
+<div style="max-width:780px;margin:0 auto">
+<form method="POST">
+  <div class="form-section">
+    <div class="form-section-hdr">👤 بيانات الحساب</div>
+    <div class="form-body"><div class="form-grid">
+      <div class="form-group form-full">
+        <label class="form-label"><span class="req">*</span> الاسم الكامل</label>
+        <input name="full_name" class="form-control" value="{{ form.full_name or '' }}" required placeholder="الاسم الثلاثي">
+      </div>
+      <div class="form-group"><label class="form-label">الاسم بالإنجليزية</label><input name="full_name_en" class="form-control" value="{{ form.full_name_en or '' }}"></div>
+      <div class="form-group">
+        <label class="form-label"><span class="req">*</span> اسم المستخدم (للدخول)</label>
+        <input name="username" class="form-control" value="{{ form.username or '' }}" {% if is_edit %}readonly style="opacity:.6"{% else %}required{% endif %} placeholder="بدون مسافات">
+      </div>
+      <div class="form-group"><label class="form-label">المسمى الوظيفي</label><input name="job_title" class="form-control" value="{{ form.job_title or '' }}" placeholder="مثال: مدير المشاريع"></div>
+      <div class="form-group"><label class="form-label">البريد الإلكتروني</label><input type="email" name="email" class="form-control" value="{{ form.email or '' }}"></div>
+      <div class="form-group"><label class="form-label">الهاتف</label><input name="phone" class="form-control" value="{{ form.phone or '' }}"></div>
+      <div class="form-group">
+        <label class="form-label">القسم / الإدارة</label>
+        <select name="department_id" class="form-control"><option value="">— اختر القسم —</option>
+          {% for d in depts %}<option value="{{ d.id }}" {% if form.department_id==d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">الصلاحية</label>
+        <select name="role" class="form-control" id="roleSelect" onchange="onRoleChange()">
+          <option value="user"        {% if (form.role or 'user')=='user'        %}selected{% endif %}>👤 مستخدم عادي</option>
+          <option value="manager"     {% if form.role=='manager'     %}selected{% endif %}>📋 مشرف / مدير قسم</option>
+          <option value="admin"       {% if form.role=='admin'       %}selected{% endif %}>🔑 مدير النظام</option>
+          <option value="super_admin" {% if form.role=='super_admin' %}selected{% endif %}>👑 مدير عام</option>
+        </select>
+      </div>
+      {% if not is_edit %}
+      <div class="form-group">
+        <label class="form-label"><span class="req">*</span> كلمة المرور</label>
+        <input type="password" name="password" class="form-control" required placeholder="8 أحرف على الأقل">
+      </div>
+      {% else %}
+      <div class="form-group">
+        <label class="form-label">كلمة المرور الجديدة</label>
+        <input type="password" name="new_password" class="form-control" placeholder="اتركه فارغاً للإبقاء">
+      </div>
+      <div class="form-group">
+        <label class="form-label">حالة الحساب</label>
+        <div style="padding:11px 0">
+          <label class="form-check">
+            <input type="checkbox" name="is_active" value="1" {% if form.is_active %}checked{% endif %}>
+            <span>الحساب نشط ومفعّل</span>
+          </label>
+        </div>
+      </div>
+      {% endif %}
+    </div></div>
+  </div>
+
+  <!-- Project Permissions -->
+  <div class="form-section" id="projSection">
+    <div class="form-section-hdr">🏗️ صلاحيات المشاريع</div>
+    <div class="form-body">
+      <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);border-radius:var(--rs);margin-bottom:16px">
+        <input type="checkbox" name="all_projects" id="allProjChk" value="1"
+               {% if form.all_projects or form.role in ('admin','super_admin') %}checked{% endif %}
+               style="width:20px;height:20px;accent-color:var(--elec);cursor:pointer"
+               onchange="onAllProjChange()">
+        <div>
+          <label for="allProjChk" style="font-size:14px;font-weight:800;color:var(--elec);cursor:pointer">🌐 صلاحية جميع المشاريع</label>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">يرى جميع المراسلات في كل المشاريع الحالية والمستقبلية</div>
+        </div>
+      </div>
+      <div id="projListWrap">
+        <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;display:flex;justify-content:space-between">
+          <span>اختر المشاريع المسموح بها:</span>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="btn btn-ghost btn-xs" onclick="selectAll()">تحديد الكل</button>
+            <button type="button" class="btn btn-ghost btn-xs" onclick="clearAll()">مسح الكل</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          {% for p in all_projects %}
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:rgba(0,119,182,.05);border:1px solid var(--border);border-radius:var(--rs);cursor:pointer;transition:.2s"
+                 onmouseover="this.style.borderColor='var(--sky)'" onmouseout="this.style.borderColor='var(--border)'">
+            <input type="checkbox" name="project_ids" value="{{ p.id }}"
+                   {% if p.id in (assigned or []) %}checked{% endif %}
+                   style="width:15px;height:15px;accent-color:var(--sky);cursor:pointer">
+            <div style="width:10px;height:10px;border-radius:50%;background:{{ p.color }};flex-shrink:0"></div>
+            <div style="min-width:0">
+              <div style="font-size:12px;font-weight:700;color:var(--text)" class="truncate">{{ p.name }}</div>
+              <div style="font-size:10px;color:var(--text3)">{{ p.code }}</div>
+            </div>
+          </label>
+          {% else %}
+          <div class="empty" style="grid-column:span 2;padding:24px"><div class="empty-icon">🏗️</div><div class="empty-title fs-12">لا توجد مشاريع</div></div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:10px">
+    <button type="submit" class="btn btn-electric">{{ '💾 حفظ التعديلات' if is_edit else '➕ إضافة المستخدم' }}</button>
+    <a href="{{ url_for('users') }}" class="btn btn-ghost">إلغاء</a>
+  </div>
+</form>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function onRoleChange(){
+  const r=document.getElementById('roleSelect').value;
+  if(['admin','super_admin'].includes(r)){
+    document.getElementById('allProjChk').checked=true;
+    onAllProjChange();
+  }
+}
+function onAllProjChange(){
+  const c=document.getElementById('allProjChk').checked;
+  const w=document.getElementById('projListWrap');
+  w.style.opacity=c?.4:1; w.style.pointerEvents=c?'none':'all';
+}
+function selectAll(){document.querySelectorAll('input[name="project_ids"]').forEach(c=>c.checked=true)}
+function clearAll(){document.querySelectorAll('input[name="project_ids"]').forEach(c=>c.checked=false)}
+onRoleChange(); onAllProjChange();
+</script>
+{% endblock %}

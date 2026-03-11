@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CCMS">
+<meta name="theme-color" content="#00b4d8">
+<title>{% block title %}CCMS{% endblock %} | {{ company.name or 'نظام الاتصالات' }}</title>
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#030b1f;--bg2:#050f2a;--bg3:#071438;
+  --card:#091650;--card2:#0c1d6a;--card3:#0f2280;
+  --border:#1a3090;--border2:#2545b8;--border3:#3060d0;
+  --sky:#00b4d8;--sky2:#48cae4;--sky3:#90e0ef;
+  --ocean:#0077b6;--ocean2:#023e8a;--ocean3:#03045e;
+  --elec:#00d4ff;--elec2:#00f5ff;
+  --mint:#06ffa5;--gold:#ffd60a;--warn:#ff9f1c;--danger:#ff3860;
+  --purple:#7b2fff;--violet:#a855f7;
+  --text:#e2f0fb;--text2:#8ec5e6;--text3:#4a7fa5;--muted:#2d5070;
+  --sidebar:260px;--header:62px;--r:12px;--rs:8px;--rxs:6px;
+  --shadow:0 8px 32px rgba(0,0,0,.55);
+  --glow:0 0 20px rgba(0,180,216,.3);
+  --glow2:0 0 30px rgba(0,212,255,.4);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'Cairo',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+body::before{content:'';position:fixed;inset:0;background:
+  radial-gradient(ellipse 90% 60% at 15% -5%,rgba(0,119,182,.2) 0%,transparent 60%),
+  radial-gradient(ellipse 70% 50% at 85% 105%,rgba(0,180,216,.15) 0%,transparent 55%),
+  radial-gradient(ellipse 50% 80% at 50% 50%,rgba(7,18,72,.7) 0%,transparent 100%);
+  pointer-events:none;z-index:0}
+a{text-decoration:none;color:inherit}
+input,select,textarea,button{font-family:inherit}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--sky)}
+
+/* ── LAYOUT ─────────────────────────────── */
+.app{display:flex;min-height:100vh;position:relative;z-index:1}
+.main-content{flex:1;margin-right:var(--sidebar);margin-top:var(--header);padding:24px;min-width:0}
+
+/* ── SIDEBAR ─────────────────────────────── */
+.sidebar{width:var(--sidebar);background:linear-gradient(180deg,var(--bg2),var(--bg3));
+  border-left:1px solid var(--border);display:flex;flex-direction:column;
+  position:fixed;top:0;right:0;bottom:0;z-index:200;overflow:hidden;transition:.3s}
+.sidebar::before{content:'';position:absolute;top:0;right:0;left:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--elec),var(--sky),transparent);
+  box-shadow:0 1px 20px rgba(0,212,255,.5)}
+
+.sb-logo{padding:16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)}
+.sb-logo-icon{width:42px;height:42px;background:linear-gradient(135deg,var(--ocean),var(--elec));
+  border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;
+  box-shadow:var(--glow);flex-shrink:0}
+.sb-logo-text{flex:1;min-width:0}
+.sb-logo-name{font-size:12px;font-weight:800;color:var(--elec);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-logo-sub{font-size:10px;color:var(--text3);margin-top:1px}
+
+.sb-user{padding:12px 16px;display:flex;align-items:center;gap:10px;
+  background:rgba(0,180,216,.06);border-bottom:1px solid var(--border)}
+.sb-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--ocean),var(--sky));
+  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;flex-shrink:0}
+.sb-user-name{font-size:12px;font-weight:700;color:var(--text);line-height:1.3}
+.sb-user-role{font-size:10px;color:var(--sky);margin-top:1px}
+
+.sb-nav{flex:1;overflow-y:auto;padding:10px 8px}
+.sb-section{font-size:9px;font-weight:700;color:var(--text3);letter-spacing:.12em;
+  text-transform:uppercase;padding:10px 10px 4px;margin-top:6px}
+.sb-link{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--rs);
+  color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;transition:.2s;
+  position:relative;margin-bottom:2px}
+.sb-link:hover{background:rgba(0,180,216,.12);color:var(--sky)}
+.sb-link.active{background:linear-gradient(90deg,rgba(0,180,216,.2),rgba(0,212,255,.08));
+  color:var(--elec);border-right:3px solid var(--elec)}
+.sb-link .sb-icon{font-size:17px;flex-shrink:0;width:22px;text-align:center}
+.sb-link .sb-badge{margin-right:auto;background:var(--danger);color:#fff;font-size:10px;
+  font-weight:800;padding:1px 6px;border-radius:20px;min-width:18px;text-align:center}
+.sb-link .sb-badge.warn{background:var(--warn)}
+.sb-link .sb-badge.sky{background:var(--sky);color:var(--bg)}
+
+/* ── Language switcher in sidebar ─────── */
+.sb-lang{display:flex;align-items:center;gap:6px;padding:8px 12px;margin-bottom:2px}
+.sb-lang-label{font-size:11px;color:var(--text3);font-weight:600;margin-left:auto}
+.lang-btn{padding:2px 8px;border-radius:4px;font-size:11px;text-decoration:none;
+  border:1px solid var(--border);color:var(--text3);transition:.2s}
+.lang-btn:hover{border-color:var(--sky);color:var(--sky)}
+.lang-btn.active{background:rgba(0,180,216,.15);border-color:var(--sky);color:var(--sky)}
+
+.sb-footer{padding:12px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);text-align:center}
+
+/* ── HEADER ─────────────────────────────── */
+.header{position:fixed;top:0;left:0;right:var(--sidebar);height:var(--header);
+  background:rgba(5,15,42,.85);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);z-index:150;
+  display:flex;align-items:center;padding:0 24px;gap:16px}
+.header-title h1{font-size:18px;font-weight:800;color:var(--text)}
+.header-title p{font-size:11px;color:var(--text3);margin-top:1px}
+.header-actions{margin-right:auto;display:flex;align-items:center;gap:10px}
+.hdr-btn{position:relative;width:38px;height:38px;border-radius:var(--rs);
+  background:rgba(0,180,216,.08);border:1px solid var(--border);
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;cursor:pointer;transition:.2s;color:var(--text2)}
+.hdr-btn:hover{background:rgba(0,180,216,.18);color:var(--sky);border-color:var(--sky)}
+.hdr-badge{position:absolute;top:-5px;left:-5px;background:var(--danger);color:#fff;
+  font-size:9px;font-weight:800;border-radius:10px;padding:1px 5px;min-width:16px;text-align:center}
+
+/* ── FLASH MESSAGES ─────────────────────── */
+.flash-wrap{position:fixed;top:calc(var(--header)+10px);left:50%;transform:translateX(-50%);
+  z-index:9999;display:flex;flex-direction:column;gap:8px;min-width:340px;max-width:600px}
+.flash{padding:12px 18px;border-radius:var(--rs);font-size:13px;font-weight:600;
+  display:flex;align-items:center;gap:10px;animation:slideDown .3s ease;
+  box-shadow:var(--shadow);border:1px solid;cursor:pointer}
+.flash.success{background:rgba(6,255,165,.1);border-color:rgba(6,255,165,.3);color:var(--mint)}
+.flash.error{background:rgba(255,56,96,.1);border-color:rgba(255,56,96,.3);color:var(--danger)}
+.flash.info{background:rgba(0,180,216,.1);border-color:rgba(0,180,216,.3);color:var(--sky)}
+.flash.warning{background:rgba(255,159,28,.1);border-color:rgba(255,159,28,.3);color:var(--warn)}
+@keyframes slideDown{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── CARDS & PANELS ─────────────────────── */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.panel-glow{box-shadow:0 4px 24px rgba(0,119,182,.2)}
+.panel-header{padding:16px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between}
+.panel-title{font-size:14px;font-weight:800;color:var(--text);display:flex;align-items:center;gap:8px}
+.panel-body{padding:20px}
+
+/* ── card (bootstrap compat) ─────────────── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.card-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-header h5,.card-header h6{margin:0;font-weight:700;color:var(--text)}
+.card-body{padding:18px}
+
+/* ── KPI CARDS ──────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
+.kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+  padding:20px 18px;position:relative;overflow:hidden;transition:.3s;cursor:default}
+.kpi:hover{border-color:var(--border2);transform:translateY(-2px);box-shadow:var(--shadow)}
+.kpi::before{content:'';position:absolute;top:0;right:0;left:0;height:3px;background:var(--kpi-color,var(--sky))}
+.kpi-icon{font-size:28px;margin-bottom:10px}
+.kpi-val{font-size:32px;font-weight:900;color:var(--kpi-color,var(--sky));line-height:1}
+.kpi-label{font-size:12px;color:var(--text3);margin-top:6px;font-weight:600}
+.kpi-sub{font-size:11px;color:var(--text3);margin-top:3px}
+.kpi-trend{position:absolute;top:16px;left:16px;font-size:11px;font-weight:700}
+.kpi-trend.up{color:var(--mint)}
+.kpi-trend.down{color:var(--danger)}
+
+/* stat-card alias ─────────────────────────── */
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+  padding:18px;display:flex;align-items:center;gap:14px;transition:.2s}
+.stat-card:hover{border-color:var(--sky);box-shadow:var(--glow)}
+.stat-icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;
+  justify-content:center;font-size:22px;flex-shrink:0;
+  background:linear-gradient(135deg,rgba(0,180,216,.15),rgba(0,212,255,.08))}
+.stat-value{font-size:28px;font-weight:900;color:var(--text);line-height:1}
+.stat-label{font-size:12px;color:var(--text3);margin-top:3px}
+
+/* ── TABLE ──────────────────────────────── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead tr{background:rgba(0,119,182,.15);border-bottom:2px solid var(--border2)}
+th{padding:12px 14px;text-align:right;font-weight:700;color:var(--sky);white-space:nowrap;font-size:12px}
+td{padding:11px 14px;border-bottom:1px solid rgba(26,48,144,.4);color:var(--text2);vertical-align:middle}
+tbody tr{transition:.15s}
+tbody tr:hover{background:rgba(0,119,182,.08)}
+tbody tr:last-child td{border-bottom:none}
+/* bootstrap table compat */
+.table{width:100%;border-collapse:collapse;font-size:13px}
+.table th{padding:12px 14px;text-align:right;font-weight:700;color:var(--sky);white-space:nowrap;font-size:12px;background:rgba(0,119,182,.15);border-bottom:2px solid var(--border2)}
+.table td{padding:11px 14px;border-bottom:1px solid rgba(26,48,144,.4);color:var(--text2);vertical-align:middle}
+.table tbody tr:hover{background:rgba(0,119,182,.08)}
+.table tbody tr:last-child td{border-bottom:none}
+.table-sm th,.table-sm td{padding:8px 12px}
+
+/* ── BADGES ─────────────────────────────── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;
+  font-size:11px;font-weight:700;border:1px solid;white-space:nowrap}
+.badge-out{background:rgba(0,212,255,.1);color:var(--elec);border-color:rgba(0,212,255,.3)}
+.badge-in{background:rgba(6,255,165,.1);color:var(--mint);border-color:rgba(6,255,165,.3)}
+.badge-internal{background:rgba(123,47,255,.1);color:var(--purple);border-color:rgba(123,47,255,.3)}
+.badge-urgent{background:rgba(255,56,96,.15);color:var(--danger);border-color:rgba(255,56,96,.3);animation:pulse-badge 2s infinite}
+.badge-high{background:rgba(255,159,28,.1);color:var(--warn);border-color:rgba(255,159,28,.3)}
+.badge-normal{background:rgba(0,180,216,.1);color:var(--sky);border-color:rgba(0,180,216,.3)}
+.badge-low{background:rgba(74,127,165,.1);color:var(--text3);border-color:rgba(74,127,165,.3)}
+.badge-draft{background:rgba(74,127,165,.1);color:var(--text3);border-color:var(--border)}
+.badge-sent{background:rgba(0,212,255,.1);color:var(--elec);border-color:rgba(0,212,255,.3)}
+.badge-approved{background:rgba(6,255,165,.1);color:var(--mint);border-color:rgba(6,255,165,.3)}
+.badge-pending{background:rgba(255,159,28,.1);color:var(--warn);border-color:rgba(255,159,28,.3)}
+.badge-rejected{background:rgba(255,56,96,.1);color:var(--danger);border-color:rgba(255,56,96,.3)}
+.badge-admin{background:rgba(0,212,255,.12);color:var(--elec);border-color:rgba(0,212,255,.3)}
+.badge-active{background:rgba(6,255,165,.1);color:var(--mint);border-color:rgba(6,255,165,.25)}
+.badge-inactive{background:rgba(255,56,96,.1);color:var(--danger);border-color:rgba(255,56,96,.25)}
+.bg-success{background:var(--mint)!important;color:#000!important}
+.bg-danger{background:var(--danger)!important;color:#fff!important}
+.bg-primary{background:var(--sky)!important;color:#000!important}
+.bg-secondary{background:rgba(255,255,255,.1)!important;color:var(--text2)!important}
+.bg-warning{background:var(--warn)!important;color:#000!important}
+@keyframes pulse-badge{0%,100%{opacity:1}50%{opacity:.6}}
+
+/* ── PRIORITY DOT ───────────────────────── */
+.pri-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+.pri-dot.urgent{background:var(--danger);box-shadow:0 0 6px var(--danger)}
+.pri-dot.high{background:var(--warn)}
+.pri-dot.normal{background:var(--sky)}
+.pri-dot.low{background:var(--text3)}
+
+/* ── BUTTONS ─────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border-radius:var(--rs);
+  font-size:13px;font-weight:700;cursor:pointer;border:none;transition:.2s;text-decoration:none;
+  white-space:nowrap;font-family:inherit}
+.btn:hover{transform:translateY(-1px)}
+.btn-primary{background:linear-gradient(135deg,var(--ocean),var(--sky));color:#fff;box-shadow:0 4px 15px rgba(0,119,182,.35)}
+.btn-electric{background:linear-gradient(135deg,var(--elec),var(--sky));color:var(--bg);box-shadow:0 4px 18px rgba(0,212,255,.35)}
+.btn-mint{background:linear-gradient(135deg,var(--mint),#00cc85);color:var(--bg);box-shadow:0 4px 18px rgba(6,255,165,.3)}
+.btn-outline{background:transparent;color:var(--sky);border:1px solid var(--border2)}
+.btn-outline:hover{border-color:var(--sky);background:rgba(0,180,216,.08)}
+.btn-outline-info{background:transparent;color:var(--sky);border:1px solid var(--sky)}
+.btn-outline-info:hover{background:rgba(0,180,216,.1)}
+.btn-outline-success{background:transparent;color:var(--mint);border:1px solid var(--mint)}
+.btn-outline-success:hover{background:rgba(6,255,165,.1)}
+.btn-warn{background:rgba(255,159,28,.15);color:var(--warn);border:1px solid rgba(255,159,28,.3)}
+.btn-warn:hover{background:rgba(255,159,28,.25)}
+.btn-danger{background:rgba(255,56,96,.12);color:var(--danger);border:1px solid rgba(255,56,96,.3)}
+.btn-danger:hover{background:rgba(255,56,96,.25)}
+.btn-ghost{background:rgba(0,180,216,.06);color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:rgba(0,180,216,.14);color:var(--sky)}
+.btn-success{background:var(--mint);color:var(--bg)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-xs{padding:4px 9px;font-size:11px}
+.btn-lg{padding:13px 26px;font-size:15px}
+.btn-icon{padding:8px;width:36px;height:36px;justify-content:center}
+
+/* ── FORMS ──────────────────────────────── */
+.form-section{background:var(--card);border:1px solid var(--border);border-radius:var(--r);margin-bottom:20px;overflow:hidden}
+.form-section-hdr{padding:14px 20px;background:rgba(0,119,182,.12);border-bottom:1px solid var(--border);
+  font-size:13px;font-weight:800;color:var(--sky);display:flex;align-items:center;gap:8px}
+.form-body{padding:20px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.form-full{grid-column:span 2}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:5px}
+.form-label .req{color:var(--danger);margin-left:3px}
+.form-control{background:rgba(0,20,80,.5);border:1px solid var(--border);border-radius:var(--rs);
+  padding:10px 14px;color:var(--text);font-size:13px;transition:.2s;font-family:inherit;width:100%}
+.form-control:focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px rgba(0,180,216,.15);background:rgba(0,30,100,.6)}
+.form-control::placeholder{color:var(--text3)}
+select.form-control option,.form-select option{background:var(--card2)}
+textarea.form-control{min-height:120px;resize:vertical}
+.form-select{background:rgba(0,20,80,.5);border:1px solid var(--border);border-radius:var(--rs);
+  padding:10px 14px;color:var(--text);font-size:13px;font-family:inherit;width:100%;outline:none}
+.form-select:focus{border-color:var(--sky);box-shadow:0 0 0 3px rgba(0,180,216,.15)}
+.form-hint{font-size:11px;color:var(--text3);margin-top:2px}
+.form-check{display:flex;align-items:center;gap:10px;cursor:pointer}
+.form-check-input{width:17px;height:17px;accent-color:var(--sky);cursor:pointer}
+.form-check-label{font-size:13px;color:var(--text2);cursor:pointer;font-weight:600}
+.form-check.form-switch .form-check-input{width:36px;height:20px}
+.input-group{display:flex}
+.input-group .form-control{border-radius:var(--rs) 0 0 var(--rs)}
+.input-group .btn{border-radius:0 var(--rs) var(--rs) 0;flex-shrink:0}
+
+/* ── GRID (bootstrap compat) ─────────────── */
+.row{display:flex;flex-wrap:wrap;margin:0 -8px}
+.row.g-2>*{padding:4px}.row.g-3>*{padding:8px}.row.g-4>*{padding:10px}
+[class*="col-"]{padding:0 8px;min-width:0}
+.col-12{flex:0 0 100%;max-width:100%}
+.col-6{flex:0 0 50%;max-width:50%}
+.col-md-3{flex:0 0 25%;max-width:25%}
+.col-md-4{flex:0 0 33.333%;max-width:33.333%}
+.col-md-6{flex:0 0 50%;max-width:50%}
+.col-md-8{flex:0 0 66.667%;max-width:66.667%}
+.col-lg-4{flex:0 0 33.333%;max-width:33.333%}
+.col-lg-6{flex:0 0 50%;max-width:50%}
+.col-lg-8{flex:0 0 66.667%;max-width:66.667%}
+
+/* ── ALERTS ─────────────────────────────── */
+.alert{padding:12px 16px;border-radius:var(--rs);border:1px solid;font-size:13px;display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+.alert-info{background:rgba(0,180,216,.08);border-color:rgba(0,180,216,.25);color:var(--sky2)}
+.alert-success{background:rgba(6,255,165,.08);border-color:rgba(6,255,165,.25);color:var(--mint)}
+.alert-warning{background:rgba(255,159,28,.08);border-color:rgba(255,159,28,.25);color:var(--warn)}
+.alert-danger{background:rgba(255,56,96,.08);border-color:rgba(255,56,96,.25);color:var(--danger)}
+.alert-secondary{background:rgba(255,255,255,.04);border-color:var(--border);color:var(--text3)}
+
+/* ── PROGRESS ────────────────────────────── */
+.progress{background:rgba(255,255,255,.08);border-radius:20px;overflow:hidden}
+.progress-bar{background:linear-gradient(90deg,var(--ocean),var(--sky));height:100%;border-radius:20px;transition:.5s}
+.progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--ocean),var(--sky));transition:.5s}
+
+/* ── SPINNER ─────────────────────────────── */
+.spinner-border{width:1.5rem;height:1.5rem;border:.2em solid currentColor;border-right-color:transparent;
+  border-radius:50%;animation:spin .75s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.text-info{color:var(--sky)!important}
+
+/* ── EMPTY STATE ─────────────────────────── */
+.empty{padding:60px 20px;text-align:center}
+.empty-icon{font-size:52px;margin-bottom:16px;opacity:.5}
+.empty-title{font-size:16px;font-weight:700;color:var(--text2);margin-bottom:8px}
+.empty-sub{font-size:13px;color:var(--text3)}
+
+/* ── MODAL ──────────────────────────────── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
+  z-index:9000;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.show{display:flex}
+.modal{background:var(--card2);border:1px solid var(--border2);border-radius:var(--r);
+  max-width:440px;width:100%;padding:28px;box-shadow:0 20px 60px rgba(0,0,0,.6);
+  animation:modalIn .25s ease}
+@keyframes modalIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.modal-title{font-size:16px;font-weight:800;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+.modal-body{font-size:13px;color:var(--text2);margin-bottom:20px;line-height:1.7}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end}
+
+/* ── TABS ────────────────────────────────── */
+.nav-tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:0;overflow-x:auto;scrollbar-width:none}
+.nav-tabs::-webkit-scrollbar{display:none}
+.nav-link{padding:9px 16px;color:var(--text3);text-decoration:none;font-size:13px;font-weight:600;
+  border-bottom:2px solid transparent;white-space:nowrap;cursor:pointer;background:none;
+  border-top:none;border-left:none;border-right:none;font-family:inherit;transition:.2s}
+.nav-link:hover{color:var(--text)}
+.nav-link.active{color:var(--sky);border-bottom-color:var(--sky)}
+.tab-content .tab-pane{display:none}
+.tab-content .tab-pane.show.active{display:block}
+.mb-4{margin-bottom:16px!important}
+.mb-3{margin-bottom:12px!important}
+.mb-2{margin-bottom:8px!important}
+.mt-2{margin-top:8px!important}
+.mt-3{margin-top:12px!important}
+.mt-4{margin-top:16px!important}
+.p-0{padding:0!important}
+.py-3{padding-top:12px!important;padding-bottom:12px!important}
+.py-4{padding-top:16px!important;padding-bottom:16px!important}
+.d-flex{display:flex!important}
+.d-grid{display:grid!important}
+.align-items-center{align-items:center}
+.justify-content-between{justify-content:space-between}
+.justify-content-end{justify-content:flex-end}
+.flex-wrap{flex-wrap:wrap}
+.gap-1{gap:4px}.gap-2{gap:8px}.gap-3{gap:12px}.gap-4{gap:16px}
+.text-center{text-align:center!important}
+.text-muted{color:var(--text3)!important}
+.text-success{color:var(--mint)!important}
+.text-danger{color:var(--danger)!important}
+.text-warning{color:var(--warn)!important}
+.fw-600{font-weight:600}.fw-700{font-weight:700}.fw-medium{font-weight:500}
+.small,.fs-12{font-size:12px}.fs-11{font-size:11px}
+.w-100{width:100%}.h-100{height:100%}
+.me-auto{margin-left:auto}
+
+/* ── TIMELINE / WORKFLOW ─────────────────── */
+.timeline{position:relative;padding-right:28px}
+.timeline::before{content:'';position:absolute;right:11px;top:0;bottom:0;width:2px;background:var(--border)}
+.tl-item{position:relative;margin-bottom:20px}
+.tl-dot{position:absolute;right:-28px;width:22px;height:22px;border-radius:50%;
+  background:var(--card2);border:2px solid var(--border2);
+  display:flex;align-items:center;justify-content:center;font-size:11px}
+.tl-dot.done{background:var(--mint);border-color:var(--mint);color:var(--bg)}
+.tl-dot.active{background:var(--sky);border-color:var(--sky);color:var(--bg);box-shadow:0 0 12px rgba(0,180,216,.5)}
+.tl-dot.rejected{background:var(--danger);border-color:var(--danger);color:#fff}
+.tl-content{background:rgba(0,20,80,.4);border:1px solid var(--border);border-radius:var(--rs);padding:12px 16px;margin-right:8px}
+.tl-title{font-size:13px;font-weight:700;color:var(--text)}
+.tl-sub{font-size:11px;color:var(--text3);margin-top:3px}
+
+/* ── PAGE TRANSITIONS ────────────────────── */
+.page-enter{animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.page-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.page-title{font-size:20px;font-weight:800;color:var(--text)}
+
+/* ── SEARCH BAR ─────────────────────────── */
+.search-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:14px 16px;
+  background:rgba(0,20,80,.4);border-bottom:1px solid var(--border)}
+.search-input{flex:1;min-width:200px;background:rgba(0,30,100,.5);border:1px solid var(--border);
+  border-radius:var(--rs);padding:9px 14px;color:var(--text);font-size:13px;font-family:inherit}
+.search-input:focus{outline:none;border-color:var(--sky);box-shadow:0 0 0 3px rgba(0,180,216,.12)}
+
+/* ── PRINT ──────────────────────────────── */
+@media print{
+  .sidebar,.header,.flash-wrap,.no-print{display:none!important}
+  .main-content{margin:0!important;padding:0!important}
+  body{background:#fff!important;color:#000!important}
+}
+
+/* ── RESPONSIVE ─────────────────────────── */
+@media(max-width:900px){
+  :root{--sidebar:0px}
+  .sidebar{transform:translateX(100%)}
+  .sidebar.open{transform:translateX(0);width:260px}
+  .main-content{margin-right:0}
+}
+@media(max-width:768px){
+  [class*="col-md"]{flex:0 0 100%;max-width:100%}
+}
+
+/* ── UTILS ──────────────────────────────── */
+.d-flex{display:flex}.align-center{align-items:center}.gap-8{gap:8px}.gap-12{gap:12px}
+.mt-4{margin-top:4px}.mt-8{margin-top:8px}.mt-16{margin-top:16px}.mt-24{margin-top:24px}
+.mb-16{margin-bottom:16px}.mb-24{margin-bottom:24px}
+.text-muted{color:var(--text3)}.text-sky{color:var(--sky)}.text-mint{color:var(--mint)}
+.text-danger{color:var(--danger)}.text-warn{color:var(--warn)}.text-elec{color:var(--elec)}
+.fw-800{font-weight:800}.fs-12{font-size:12px}.fs-11{font-size:11px}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+{% block head %}{% endblock %}
+</head>
+<body>
+<div class="app">
+
+<!-- ── SIDEBAR ─────────────────────────── -->
+<aside class="sidebar" id="sidebar">
+  <div class="sb-logo">
+    <div class="sb-logo-icon">
+      {% if company.logo_path %}<img src="/static/{{ company.logo_path }}" style="width:30px;height:30px;object-fit:contain;border-radius:6px" alt="">
+      {% else %}🏢{% endif %}
+    </div>
+    <div class="sb-logo-text">
+      <div class="sb-logo-name">{{ company.name or 'CCMS' }}</div>
+      <div class="sb-logo-sub">نظام الاتصالات الإدارية</div>
+    </div>
+  </div>
+
+  <div class="sb-user">
+    <div class="sb-avatar">{{ current_user.full_name[0] if current_user.full_name else 'م' }}</div>
+    <div>
+      <div class="sb-user-name">{{ current_user.full_name }}</div>
+      <div class="sb-user-role">{{ current_user.job_title or current_user.role }}</div>
+    </div>
+  </div>
+
+  <nav class="sb-nav">
+    <div class="sb-section">الرئيسية</div>
+    <a href="{{ url_for('dashboard') }}" class="sb-link {% if request.endpoint=='dashboard' %}active{% endif %}">
+      <span class="sb-icon">📊</span> لوحة التحكم
+    </a>
+
+    <div class="sb-section">المراسلات</div>
+    <a href="{{ url_for('new_correspondence') }}" class="sb-link {% if request.endpoint=='new_correspondence' %}active{% endif %}">
+      <span class="sb-icon">✏️</span> مراسلة جديدة
+    </a>
+    <a href="{{ url_for('outgoing') }}" class="sb-link {% if request.endpoint=='outgoing' %}active{% endif %}">
+      <span class="sb-icon">📤</span> البريد الصادر
+    </a>
+    <a href="{{ url_for('incoming') }}" class="sb-link {% if request.endpoint=='incoming' %}active{% endif %}">
+      <span class="sb-icon">📥</span> البريد الوارد
+      {% if pending_reply %}<span class="sb-badge">{{ pending_reply }}</span>{% endif %}
+    </a>
+    <a href="{{ url_for('internal') }}" class="sb-link {% if request.endpoint=='internal' %}active{% endif %}">
+      <span class="sb-icon">🔄</span> المراسلات الداخلية
+    </a>
+    <a href="{{ url_for('archive') }}" class="sb-link {% if request.endpoint=='archive' %}active{% endif %}">
+      <span class="sb-icon">🗄️</span> الأرشيف
+    </a>
+
+    <div class="sb-section">إدارة الأعمال</div>
+    <a href="{{ url_for('projects') }}" class="sb-link {% if request.endpoint in ('projects','new_project','edit_project') %}active{% endif %}">
+      <span class="sb-icon">🏗️</span> المشاريع
+    </a>
+    <a href="{{ url_for('contacts') }}" class="sb-link {% if request.endpoint in ('contacts','new_contact','edit_contact') %}active{% endif %}">
+      <span class="sb-icon">👥</span> جهات الاتصال
+    </a>
+
+    <div class="sb-section">التحليلات والذكاء الاصطناعي</div>
+    <a href="{{ url_for('reports') }}" class="sb-link {% if request.endpoint=='reports' %}active{% endif %}">
+      <span class="sb-icon">📈</span> التقارير والإحصائيات
+    </a>
+    <a href="{{ url_for('advanced_reports') }}" class="sb-link {% if request.endpoint=='advanced_reports' %}active{% endif %}" style="padding-right:44px;font-size:13px">
+      <span class="sb-icon" style="font-size:13px">📊</span> تقارير متقدمة
+    </a>
+    <a href="{{ url_for('notification_settings_view') }}" class="sb-link {% if request.endpoint=='notification_settings_view' %}active{% endif %}">
+      <span class="sb-icon">🤖</span> الإشعارات والذكاء الاصطناعي
+    </a>
+    <a href="{{ url_for('export_excel') }}" class="sb-link" target="_blank">
+      <span class="sb-icon">⬇️</span> تصدير Excel
+    </a>
+
+    {% if is_admin %}
+    <div class="sb-section">الإدارة</div>
+    <a href="{{ url_for('users') }}" class="sb-link {% if request.endpoint in ('users','new_user','edit_user') %}active{% endif %}">
+      <span class="sb-icon">👤</span> إدارة المستخدمين
+    </a>
+    <a href="{{ url_for('settings') }}" class="sb-link {% if request.endpoint=='settings' %}active{% endif %}">
+      <span class="sb-icon">⚙️</span> إعدادات النظام
+    </a>
+    <a href="{{ url_for('api_docs') }}" class="sb-link {% if request.endpoint=='api_docs' %}active{% endif %}">
+      <span class="sb-icon">🔗</span> واجهة REST API
+    </a>
+    <a href="{{ url_for('super_admin') }}" class="sb-link {% if request.endpoint in ('super_admin','new_company') %}active{% endif %}">
+      <span class="sb-icon">🏢</span> إدارة الشركات
+    </a>
+    <a href="{{ url_for('email_ingestion') }}" class="sb-link {% if request.endpoint=='email_ingestion' %}active{% endif %}">
+      <span class="sb-icon">📧</span> استقبال البريد
+    </a>
+    {% endif %}
+
+    <div class="sb-section">الحساب</div>
+    <!-- Language Switcher -->
+    <div class="sb-lang">
+      <span class="sb-icon">🌐</span>
+      <span style="font-size:12px;color:var(--text2);font-weight:600">اللغة</span>
+      <div style="display:flex;gap:4px;margin-right:auto">
+        <a href="{{ url_for('set_language', lang='ar') }}" class="lang-btn {% if not session.get('lang') or session.get('lang')=='ar' %}active{% endif %}">ع</a>
+        <a href="{{ url_for('set_language', lang='en') }}" class="lang-btn {% if session.get('lang')=='en' %}active{% endif %}">EN</a>
+      </div>
+    </div>
+    <a href="{{ url_for('notifications') }}" class="sb-link {% if request.endpoint=='notifications' %}active{% endif %}">
+      <span class="sb-icon">🔔</span> الإشعارات
+      {% if unread %}<span class="sb-badge">{{ unread }}</span>{% endif %}
+    </a>
+    <a href="{{ url_for('logout') }}" class="sb-link" style="color:var(--danger)">
+      <span class="sb-icon">🚪</span> تسجيل الخروج
+    </a>
+  </nav>
+
+  <div class="sb-footer">
+    CCMS v3.0 Professional<br>
+    <span style="color:var(--text3);font-size:9px">© 2025 جميع الحقوق محفوظة</span>
+  </div>
+</aside>
+
+<!-- ── HEADER ─────────────────────────── -->
+<header class="header">
+  <div class="header-title">
+    <h1>{% block page_title %}الرئيسية{% endblock %}</h1>
+    <p>{% block page_sub %}نظام إدارة الاتصالات الإدارية{% endblock %}</p>
+  </div>
+  <div class="header-actions">
+    {% block header_actions %}{% endblock %}
+    <a href="{{ url_for('new_correspondence') }}" class="btn btn-electric btn-sm">＋ مراسلة جديدة</a>
+    <a href="{{ url_for('notifications') }}" class="hdr-btn" title="الإشعارات">
+      🔔 {% if unread %}<span class="hdr-badge">{{ unread }}</span>{% endif %}
+    </a>
+    {% if pending_wf %}
+    <div class="hdr-btn" title="{{ pending_wf }} مهام معلقة" style="color:var(--warn)">⏳<span class="hdr-badge" style="background:var(--warn)">{{ pending_wf }}</span></div>
+    {% endif %}
+  </div>
+</header>
+
+<!-- ── FLASH ──────────────────────────── -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="flash-wrap" id="flashWrap">
+  {% for cat, msg in messages %}
+  <div class="flash {{ cat }}" onclick="this.remove()">
+    <span>{% if cat=='success' %}✅{% elif cat=='error' %}❌{% elif cat=='info' %}ℹ️{% else %}⚠️{% endif %}</span>
+    <span>{{ msg|safe }}</span>
+  </div>
+  {% endfor %}
+</div>
+<script>setTimeout(()=>{const w=document.getElementById('flashWrap');if(w)w.remove()},5000)</script>
+{% endif %}
+{% endwith %}
+
+<!-- ── MAIN ───────────────────────────── -->
+<main class="main-content page-enter">
+  {% block content %}{% endblock %}
+</main>
+
+</div>
+
+<!-- ── MODAL ──────────────────────────── -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal">
+    <div class="modal-title" id="modalTitle">⚠️ تأكيد الإجراء</div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">إلغاء</button>
+      <form id="modalForm" method="POST"><button type="submit" class="btn btn-danger" id="modalBtn">تأكيد</button></form>
+    </div>
+  </div>
+</div>
+
+<script>
+// Modal
+function confirmAction(url,title,body,btnText='تأكيد',btnClass='btn-danger'){
+  document.getElementById('modalTitle').textContent=title;
+  document.getElementById('modalBody').textContent=body;
+  document.getElementById('modalForm').action=url;
+  document.getElementById('modalBtn').textContent=btnText;
+  document.getElementById('modalBtn').className='btn '+btnClass;
+  document.getElementById('confirmModal').classList.add('show');
+}
+function closeModal(){document.getElementById('confirmModal').classList.remove('show')}
+document.getElementById('confirmModal').addEventListener('click',function(e){if(e.target===this)closeModal()})
+
+// Tabs (bootstrap compat)
+document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab=>{
+  tab.addEventListener('click',function(e){
+    e.preventDefault();
+    const target=document.querySelector(this.getAttribute('href'));
+    if(!target)return;
+    this.closest('.nav-tabs').querySelectorAll('.nav-link').forEach(t=>t.classList.remove('active'));
+    target.closest('.tab-content').querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('show','active'));
+    this.classList.add('active');
+    target.classList.add('show','active');
+  });
+});
+
+// Mobile sidebar toggle
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()})
+
+// PWA Service Worker
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/static/sw.js').catch(()=>{});
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

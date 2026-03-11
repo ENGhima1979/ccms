@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}المستخدمون{% endblock %}
+{% block page_title %}👥 إدارة المستخدمين{% endblock %}
+{% block page_sub %}{{ user_list|length }} مستخدم مسجل{% endblock %}
+{% block header_actions %}<a href="{{ url_for('new_user') }}" class="btn btn-electric btn-sm">＋ مستخدم جديد</a>{% endblock %}
+{% block content %}
+<div class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>المستخدم</th><th>الدور</th><th>القسم</th><th>الحالة</th>
+        <th>المشاريع</th><th>المراسلات</th><th>آخر دخول</th><th class="no-print">إجراء</th>
+      </tr></thead>
+      <tbody>
+      {% for row in user_list %}{% set u=row.u %}
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,{% if u.role in ('admin','super_admin') %}var(--elec),var(--sky){% else %}var(--ocean),var(--sky){% endif %});display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900;flex-shrink:0;box-shadow:0 0 12px rgba(0,119,182,.3)">{{ u.full_name[0] }}</div>
+            <div>
+              <div style="font-weight:800;color:var(--text)">{{ u.full_name }}</div>
+              <div style="font-family:monospace;font-size:11px;color:var(--sky)">{{ u.username }}</div>
+              {% if u.job_title %}<div style="font-size:11px;color:var(--text3)">{{ u.job_title }}</div>{% endif %}
+            </div>
+          </div>
+        </td>
+        <td>
+          <span class="badge {% if u.role in ('admin','super_admin') %}badge-admin{% elif u.role=='manager' %}badge-out{% else %}badge-normal{% endif %}">
+            {{ '🔑 مدير' if u.role in ('admin','super_admin') else ('📋 مشرف' if u.role=='manager' else '👤 مستخدم') }}
+          </span>
+        </td>
+        <td class="fs-12 text-muted">{{ u.dept_name or '—' }}</td>
+        <td><span class="badge {% if u.is_active %}badge-active{% else %}badge-inactive{% endif %}">{{ '✅ نشط' if u.is_active else '❌ معطل' }}</span></td>
+        <td>
+          {% if u.role in ('admin','super_admin') or u.all_projects %}
+          <span class="badge badge-out">🌐 الكل</span>
+          {% else %}
+          <span class="badge badge-normal">🏗️ {{ row.proj_count }}</span>
+          {% endif %}
+        </td>
+        <td><span class="badge badge-normal">{{ row.corr_count }}</span></td>
+        <td class="fs-12 text-muted">{{ u.last_login[:10]|ar_date if u.last_login else 'لم يدخل' }}</td>
+        <td class="no-print">
+          <div style="display:flex;gap:4px">
+            <a href="{{ url_for('edit_user', uid=u.id) }}" class="btn btn-warn btn-xs">✏️</a>
+            {% if u.id != current_user.id %}
+            <button class="btn btn-danger btn-xs" onclick="confirmAction('{{ url_for('delete_user',uid=u.id) }}','إلغاء تفعيل المستخدم','سيتم إيقاف حساب «{{ u.full_name }}». يمكن إعادة تفعيله لاحقاً.')">🚫</button>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8"><div class="empty"><div class="empty-icon">👥</div><div class="empty-title">لا يوجد مستخدمون</div></div></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

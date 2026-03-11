@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}الإعدادات{% endblock %}
+{% block page_title %}⚙️ إعدادات النظام{% endblock %}
+{% block page_sub %}إعدادات الشركة، الأقسام، سير العمل، SLA{% endblock %}
+{% block content %}
+
+<!-- Tabs -->
+<div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:0">
+  {% for tab_id, tab_name in [('company','🏢 بيانات الشركة'),('departments','🏛️ الأقسام'),('workflow','🔄 سير العمل'),('sla','🎯 مستويات SLA')] %}
+  <button class="btn btn-ghost btn-sm tab-btn" data-tab="{{ tab_id }}" onclick="showTab('{{ tab_id }}')"
+          style="border-radius:var(--rs) var(--rs) 0 0;border-bottom:none;{% if loop.first %}background:rgba(0,180,216,.12);color:var(--sky);{% endif %}">
+    {{ tab_name }}
+  </button>
+  {% endfor %}
+</div>
+
+<!-- Company Settings -->
+<div id="tab-company" class="tab-content">
+<form method="POST" enctype="multipart/form-data">
+  <input type="hidden" name="action" value="company">
+  <div class="form-section">
+    <div class="form-section-hdr">🏢 بيانات الشركة الرسمية</div>
+    <div class="form-body"><div class="form-grid">
+      <div class="form-group form-full">
+        <label class="form-label"><span class="req">*</span> اسم الشركة</label>
+        <input name="name" class="form-control" value="{{ co.name or '' }}" required>
+      </div>
+      <div class="form-group"><label class="form-label">الاسم بالإنجليزية</label><input name="name_en" class="form-control" value="{{ co.name_en or '' }}"></div>
+      <div class="form-group"><label class="form-label">رقم السجل التجاري</label><input name="cr_number" class="form-control" value="{{ co.cr_number or '' }}"></div>
+      <div class="form-group"><label class="form-label">الرقم الضريبي VAT</label><input name="vat_number" class="form-control" value="{{ co.vat_number or '' }}"></div>
+      <div class="form-group form-full"><label class="form-label">العنوان</label><input name="address" class="form-control" value="{{ co.address or '' }}"></div>
+      <div class="form-group"><label class="form-label">المدينة</label><input name="city" class="form-control" value="{{ co.city or '' }}"></div>
+      <div class="form-group"><label class="form-label">الهاتف</label><input name="phone" class="form-control" value="{{ co.phone or '' }}"></div>
+      <div class="form-group"><label class="form-label">الفاكس</label><input name="fax" class="form-control" value="{{ co.fax or '' }}"></div>
+      <div class="form-group"><label class="form-label">البريد الإلكتروني</label><input name="email" class="form-control" value="{{ co.email or '' }}"></div>
+      <div class="form-group"><label class="form-label">الموقع الإلكتروني</label><input name="website" class="form-control" value="{{ co.website or '' }}"></div>
+      <div class="form-group"><label class="form-label">اللون الأساسي</label><input type="color" name="primary_color" class="form-control" value="{{ co.primary_color or '#00b4d8' }}" style="height:44px;cursor:pointer"></div>
+      <div class="form-group"><label class="form-label">اللون الثانوي</label><input type="color" name="secondary_color" class="form-control" value="{{ co.secondary_color or '#0077b6' }}" style="height:44px;cursor:pointer"></div>
+      <div class="form-group form-full">
+        <label class="form-label">شعار الشركة</label>
+        {% if co.logo_path %}
+        <div style="margin-bottom:8px"><img src="/instance/uploads/{{ co.logo_path }}" style="height:50px;object-fit:contain;background:rgba(255,255,255,.1);padding:6px;border-radius:6px"></div>
+        {% endif %}
+        <input type="file" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.svg,.webp">
+        <div class="form-hint">PNG أو SVG بخلفية شفافة للأفضل</div>
+      </div>
+    </div></div>
+  </div>
+  <button type="submit" class="btn btn-electric">💾 حفظ بيانات الشركة</button>
+</form>
+</div>
+
+<!-- Departments -->
+<div id="tab-departments" class="tab-content" style="display:none">
+  <div class="panel mb-16">
+    <div class="panel-header"><div class="panel-title">🏛️ الأقسام والإدارات الحالية</div></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>الاسم</th><th>الاسم بالإنجليزية</th><th>الكود</th><th>الحالة</th></tr></thead>
+        <tbody>
+        {% for d in depts %}
+        <tr>
+          <td style="font-weight:700">{{ d.name }}</td>
+          <td class="text-muted">{{ d.name_en or '—' }}</td>
+          <td><span style="font-family:monospace;color:var(--sky)">{{ d.code }}</span></td>
+          <td><span class="badge badge-active">✅ نشط</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4"><div class="empty" style="padding:30px"><div class="empty-icon">🏛️</div><div class="empty-title">لا أقسام</div></div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">➕ إضافة قسم جديد</div></div>
+    <div class="panel-body">
+      <form method="POST">
+        <input type="hidden" name="action" value="dept">
+        <div style="display:grid;grid-template-columns:1fr 1fr 120px 120px;gap:12px;align-items:end">
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> اسم القسم</label>
+            <input name="dept_name" class="form-control" placeholder="مثال: إدارة التخطيط" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">الاسم بالإنجليزية</label>
+            <input name="dept_name_en" class="form-control" placeholder="Planning Dept.">
+          </div>
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> الكود</label>
+            <input name="dept_code" class="form-control" placeholder="PLAN" required style="text-transform:uppercase">
+          </div>
+          <button type="submit" class="btn btn-mint">➕ إضافة</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Workflow -->
+<div id="tab-workflow" class="tab-content" style="display:none">
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">🔄 تعريفات سير العمل</div></div>
+    <div class="panel-body">
+      {% for wf in wf_defs %}
+      <div style="padding:14px 16px;background:rgba(0,119,182,.06);border:1px solid var(--border);border-radius:var(--rs);margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div style="font-weight:800;font-size:14px;color:var(--text)">{{ wf.name }}</div>
+          <div style="display:flex;gap:6px">
+            {% if wf.is_default %}<span class="badge badge-active">✅ افتراضي</span>{% endif %}
+            <span class="badge badge-normal">{{ (wf.steps_json|tojson|length) }} خطوات</span>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text3);margin-top:4px;direction:ltr;font-family:monospace;word-break:break-all">{{ wf.steps_json[:120] }}...</div>
+      </div>
+      {% else %}
+      <div class="empty" style="padding:40px"><div class="empty-icon">🔄</div><div class="empty-title">لا توجد تعريفات</div></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- SLA -->
+<div id="tab-sla" class="tab-content" style="display:none">
+  <div class="panel">
+    <div class="panel-header"><div class="panel-title">🎯 قواعد مستوى الخدمة SLA</div></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>الاسم</th><th>الأولوية</th><th>وقت الاستجابة</th><th>الحالة</th></tr></thead>
+        <tbody>
+        {% for s in sla_rules %}
+        <tr>
+          <td style="font-weight:700">{{ s.name }}</td>
+          <td><span class="badge badge-{{ s.priority }}">{{ s.priority|priority_label }}</span></td>
+          <td>
+            <span style="font-size:18px;font-weight:800;color:var(--elec)">{{ s.response_hours }}</span>
+            <span style="font-size:12px;color:var(--text3)"> ساعة</span>
+            ({{ (s.response_hours/24)|int }} يوم)
+          </td>
+          <td><span class="badge badge-active">✅ نشط</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4"><div class="empty" style="padding:30px"><div class="empty-icon">🎯</div><div class="empty-title">لا قواعد</div></div></td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function showTab(id){
+  document.querySelectorAll('.tab-content').forEach(t=>t.style.display='none');
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    b.style.background=''; b.style.color='';
+  });
+  document.getElementById('tab-'+id).style.display='block';
+  event.target.style.background='rgba(0,180,216,.12)';
+  event.target.style.color='var(--sky)';
+}
+</script>
+{% endblock %}

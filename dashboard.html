@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}لوحة التحكم{% endblock %}
+{% block page_title %}📊 لوحة التحكم التنفيذية{% endblock %}
+{% block page_sub %}نظرة شاملة على نشاط المراسلات والمشاريع{% endblock %}
+
+{% block content %}
+<!-- KPIs -->
+<div class="kpi-grid">
+  <div class="kpi" style="--kpi-color:var(--elec)">
+    <div class="kpi-icon">📋</div>
+    <div class="kpi-val">{{ total }}</div>
+    <div class="kpi-label">إجمالي المراسلات</div>
+    <div class="kpi-sub">نشطة وغير مؤرشفة</div>
+  </div>
+  <div class="kpi" style="--kpi-color:var(--sky)">
+    <div class="kpi-icon">📤</div>
+    <div class="kpi-val">{{ out_c }}</div>
+    <div class="kpi-label">بريد صادر</div>
+  </div>
+  <div class="kpi" style="--kpi-color:var(--mint)">
+    <div class="kpi-icon">📥</div>
+    <div class="kpi-val">{{ in_c }}</div>
+    <div class="kpi-label">بريد وارد</div>
+    <div class="kpi-sub">{{ pending_reply }} في انتظار الرد</div>
+  </div>
+  <div class="kpi" style="--kpi-color:var(--danger)">
+    <div class="kpi-icon">⚡</div>
+    <div class="kpi-val">{{ urgent }}</div>
+    <div class="kpi-label">عاجل جداً</div>
+    <div class="kpi-trend {% if urgent > 0 %}down{% else %}up{% endif %}">
+      {% if urgent > 0 %}⚠️ يستلزم تدخلاً{% else %}✅ لا يوجد{% endif %}
+    </div>
+  </div>
+  <div class="kpi" style="--kpi-color:var(--warn)">
+    <div class="kpi-icon">⏳</div>
+    <div class="kpi-val">{{ pending_reply }}</div>
+    <div class="kpi-label">في انتظار الرد</div>
+  </div>
+  <div class="kpi" style="--kpi-color:var(--text3)">
+    <div class="kpi-icon">📝</div>
+    <div class="kpi-val">{{ drafts }}</div>
+    <div class="kpi-label">مسودات</div>
+  </div>
+</div>
+
+<!-- Overdue Alert -->
+{% if overdue %}
+<div style="background:rgba(255,56,96,.08);border:1px solid rgba(255,56,96,.3);border-radius:var(--r);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px">
+  <span style="font-size:22px">🚨</span>
+  <div>
+    <div style="font-size:14px;font-weight:800;color:var(--danger)">تنبيه: {{ overdue|length }} مراسلة متأخرة بدون رد</div>
+    <div style="font-size:12px;color:var(--text3);margin-top:3px">مراسلات واردة تجاوزت 3 أيام بدون استجابة</div>
+  </div>
+  <a href="{{ url_for('incoming') }}?reply=pending" class="btn btn-danger btn-sm" style="margin-right:auto">عرض الكل</a>
+</div>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start">
+  <!-- Left: Recent + Chart -->
+  <div style="display:flex;flex-direction:column;gap:20px">
+
+    <!-- Chart -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">📈 حركة المراسلات — آخر 6 أشهر</div>
+      </div>
+      <div class="panel-body">
+        <canvas id="activityChart" height="90"></canvas>
+      </div>
+    </div>
+
+    <!-- Recent Correspondence -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">🕐 آخر المراسلات</div>
+        <div style="display:flex;gap:8px">
+          <a href="{{ url_for('outgoing') }}" class="btn btn-ghost btn-xs">الصادر</a>
+          <a href="{{ url_for('incoming') }}" class="btn btn-ghost btn-xs">الوارد</a>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>رقم المرجع</th><th>الموضوع</th><th>الجهة</th>
+            <th>المشروع</th><th>الأولوية</th><th>الحالة</th><th>التاريخ</th>
+          </tr></thead>
+          <tbody>
+          {% for c in recent %}
+          <tr onclick="location.href='{{ url_for("view_correspondence", cid=c.id) }}'" style="cursor:pointer">
+            <td><span style="font-family:monospace;font-size:11px;color:var(--sky)">{{ c.ref_num }}</span></td>
+            <td style="max-width:200px"><div class="truncate" title="{{ c.subject }}">{{ c.subject }}</div></td>
+            <td><div class="truncate" style="max-width:120px;color:var(--text2)">{{ c.party }}</div></td>
+            <td>
+              {% if c.proj_name %}
+              <span style="display:flex;align-items:center;gap:5px">
+                <span style="width:8px;height:8px;border-radius:50%;background:{{ c.proj_color or '#00b4d8' }};flex-shrink:0"></span>
+                <span class="truncate" style="max-width:100px;font-size:12px">{{ c.proj_name }}</span>
+              </span>
+              {% else %}<span class="text-muted fs-12">—</span>{% endif %}
+            </td>
+            <td><span class="badge badge-{{ c.priority }}">{{ c.priority|priority_label }}</span></td>
+            <td>
+              <span class="badge badge-{{ c.type }}">{{ '📤' if c.type=='out' else '📥' }} {{ 'صادر' if c.type=='out' else 'وارد' }}</span>
+            </td>
+            <td class="fs-12 text-muted">{{ c.date|ar_date }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7"><div class="empty"><div class="empty-icon">📭</div><div class="empty-title">لا توجد مراسلات</div></div></td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column -->
+  <div style="display:flex;flex-direction:column;gap:20px">
+
+    <!-- Workflow Tasks -->
+    {% if wf_tasks %}
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">⏳ مهام تنتظر إجراءك</div></div>
+      <div class="panel-body" style="padding:12px">
+        {% for t in wf_tasks %}
+        <a href="{{ url_for('view_correspondence', cid=t.correspondence_id) }}" style="display:block;padding:10px 12px;background:rgba(255,159,28,.06);border:1px solid rgba(255,159,28,.2);border-radius:var(--rs);margin-bottom:8px;text-decoration:none">
+          <div style="font-size:12px;font-weight:700;color:var(--warn)">{{ t.step_name }}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:3px" class="truncate">{{ t.subject }}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;font-family:monospace">{{ t.ref_num }}</div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Projects -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">🏗️ المشاريع النشطة</div>
+        <a href="{{ url_for('projects') }}" class="btn btn-ghost btn-xs">عرض الكل</a>
+      </div>
+      <div class="panel-body" style="padding:12px;display:flex;flex-direction:column;gap:10px">
+        {% for p in projects[:5] %}
+        <div style="padding:10px 12px;background:rgba(0,20,80,.4);border:1px solid var(--border);border-radius:var(--rs)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="width:10px;height:10px;border-radius:50%;background:{{ p.color }};box-shadow:0 0 8px {{ p.color }};flex-shrink:0"></div>
+            <div style="font-size:13px;font-weight:700;flex:1" class="truncate">{{ p.name }}</div>
+            <span class="fs-11 text-muted">{{ p.progress }}%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:{{ p.progress }}%;background:linear-gradient(90deg,{{ p.color }},{{ p.color }}88)"></div>
+          </div>
+          <div class="fs-11 text-muted mt-4">{{ p.client or '—' }}</div>
+        </div>
+        {% else %}
+        <div class="empty" style="padding:20px"><div class="empty-icon">🏗️</div><div class="empty-title fs-12">لا توجد مشاريع</div></div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- SLA Widget -->
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">🎯 الاستجابة المؤسسية SLA</div></div>
+      <div class="panel-body" style="padding:16px">
+        <div style="text-align:center;margin-bottom:14px">
+          <canvas id="slaChart" width="120" height="120" style="margin:0 auto;display:block"></canvas>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div style="text-align:center;padding:8px;background:rgba(6,255,165,.06);border:1px solid rgba(6,255,165,.2);border-radius:var(--rs)">
+            <div style="font-size:18px;font-weight:800;color:var(--mint)">{{ in_c - pending_reply }}</div>
+            <div style="color:var(--text3)">تمت الاستجابة</div>
+          </div>
+          <div style="text-align:center;padding:8px;background:rgba(255,56,96,.06);border:1px solid rgba(255,56,96,.2);border-radius:var(--rs)">
+            <div style="font-size:18px;font-weight:800;color:var(--danger)">{{ pending_reply }}</div>
+            <div style="color:var(--text3)">في الانتظار</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Activity Chart
+const ctx = document.getElementById('activityChart').getContext('2d');
+const months = {{ monthly|map(attribute='label')|list|tojson }};
+const outData = {{ monthly|map(attribute='out')|list|tojson }};
+const inData  = {{ monthly|map(attribute='in')|list|tojson }};
+new Chart(ctx,{type:'bar',data:{labels:months,datasets:[
+  {label:'صادر',data:outData,backgroundColor:'rgba(0,212,255,.6)',borderColor:'#00d4ff',borderWidth:1.5,borderRadius:4},
+  {label:'وارد', data:inData, backgroundColor:'rgba(6,255,165,.4)',borderColor:'#06ffa5',borderWidth:1.5,borderRadius:4},
+]},options:{responsive:true,plugins:{legend:{labels:{color:'#8ec5e6',font:{family:'Cairo',size:11}}}},
+scales:{x:{ticks:{color:'#4a7fa5',font:{family:'Cairo'}},grid:{color:'rgba(26,48,144,.3)'}},
+y:{ticks:{color:'#4a7fa5',font:{family:'Cairo'}},grid:{color:'rgba(26,48,144,.3)'}}}}});
+
+// SLA Donut
+const ctx2 = document.getElementById('slaChart').getContext('2d');
+const replied = {{ in_c - pending_reply }};
+const pending = {{ pending_reply }};
+new Chart(ctx2,{type:'doughnut',data:{
+  labels:['تمت الاستجابة','في الانتظار'],
+  datasets:[{data:[replied||1,pending],backgroundColor:['rgba(6,255,165,.7)','rgba(255,56,96,.7)'],
+  borderColor:['#06ffa5','#ff3860'],borderWidth:2,hoverOffset:6}]
+},options:{responsive:false,cutout:'70%',plugins:{legend:{display:false}}}});
+</script>
+{% endblock %}

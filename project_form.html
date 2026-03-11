@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% set is_edit = pid is defined and pid %}
+{% block title %}{{ 'تعديل مشروع' if is_edit else 'مشروع جديد' }}{% endblock %}
+{% block page_title %}{{ '✏️ تعديل المشروع' if is_edit else '🏗️ مشروع جديد' }}{% endblock %}
+{% block header_actions %}<a href="{{ url_for('projects') }}" class="btn btn-ghost btn-sm">← رجوع</a>{% endblock %}
+{% block content %}
+<div style="max-width:700px;margin:0 auto">
+<form method="POST" class="d-flex" style="flex-direction:column;gap:0">
+  <div class="form-section">
+    <div class="form-section-hdr">🏗️ معلومات المشروع</div>
+    <div class="form-body"><div class="form-grid">
+      <div class="form-group form-full">
+        <label class="form-label"><span class="req">*</span> اسم المشروع</label>
+        <input name="name" class="form-control" value="{{ form.name or '' }}" required placeholder="الاسم الكامل للمشروع">
+      </div>
+      <div class="form-group">
+        <label class="form-label"><span class="req">*</span> رمز المشروع</label>
+        <input name="code" class="form-control" value="{{ form.code or '' }}" {% if is_edit %}readonly style="opacity:.6"{% else %}required{% endif %} placeholder="مثال: NEOM01" style="text-transform:uppercase">
+      </div>
+      <div class="form-group">
+        <label class="form-label">الاسم بالإنجليزية</label>
+        <input name="name_en" class="form-control" value="{{ form.name_en or '' }}" placeholder="English name">
+      </div>
+      <div class="form-group form-full">
+        <label class="form-label">الوصف</label>
+        <textarea name="description" class="form-control" style="min-height:80px" placeholder="وصف مختصر للمشروع">{{ form.description or '' }}</textarea>
+      </div>
+      <div class="form-group"><label class="form-label">العميل / الجهة المالكة</label><input name="client" class="form-control" value="{{ form.client or '' }}" placeholder="اسم الجهة أو الشركة العميلة"></div>
+      <div class="form-group"><label class="form-label">شخص التواصل لدى العميل</label><input name="client_contact" class="form-control" value="{{ form.client_contact or '' }}"></div>
+      <div class="form-group"><label class="form-label">الموقع / المدينة</label><input name="location" class="form-control" value="{{ form.location or '' }}" placeholder="مثال: الرياض — حي العليا"></div>
+      <div class="form-group"><label class="form-label">رقم العقد</label><input name="contract_number" class="form-control" value="{{ form.contract_number or '' }}"></div>
+      <div class="form-group"><label class="form-label">قيمة العقد</label><input type="number" name="contract_value" class="form-control" value="{{ form.contract_value or '' }}" step="0.01" placeholder="0.00"></div>
+      <div class="form-group"><label class="form-label">العملة</label>
+        <select name="currency" class="form-control">
+          <option value="SAR" {% if (form.currency or 'SAR')=='SAR' %}selected{% endif %}>ريال سعودي SAR</option>
+          <option value="USD" {% if form.currency=='USD' %}selected{% endif %}>دولار USD</option>
+          <option value="EUR" {% if form.currency=='EUR' %}selected{% endif %}>يورو EUR</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">تاريخ البداية</label><input type="date" name="start_date" class="form-control" value="{{ form.start_date or '' }}"></div>
+      <div class="form-group"><label class="form-label">تاريخ الانتهاء المخطط</label><input type="date" name="end_date" class="form-control" value="{{ form.end_date or '' }}"></div>
+      <div class="form-group"><label class="form-label">نسبة الإنجاز %</label><input type="range" name="progress" class="form-control" value="{{ form.progress or 0 }}" min="0" max="100" oninput="document.getElementById('progVal').textContent=this.value+'%'"><div id="progVal" style="color:var(--sky);font-weight:800;margin-top:4px">{{ form.progress or 0 }}%</div></div>
+      <div class="form-group"><label class="form-label">الحالة</label>
+        <select name="status" class="form-control">
+          <option value="active"    {% if (form.status or 'active')=='active'    %}selected{% endif %}>✅ نشط</option>
+          <option value="on_hold"   {% if form.status=='on_hold'   %}selected{% endif %}>⏸️ متوقف مؤقتاً</option>
+          <option value="completed" {% if form.status=='completed' %}selected{% endif %}>🏁 مكتمل</option>
+          <option value="cancelled" {% if form.status=='cancelled' %}selected{% endif %}>❌ ملغى</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">الأولوية</label>
+        <select name="priority" class="form-control">
+          <option value="low"    {% if form.priority=='low'    %}selected{% endif %}>⚪ منخفضة</option>
+          <option value="normal" {% if (form.priority or 'normal')=='normal' %}selected{% endif %}>🔵 عادية</option>
+          <option value="high"   {% if form.priority=='high'   %}selected{% endif %}>🔴 عالية</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">مدير المشروع</label>
+        <select name="manager_id" class="form-control"><option value="">— اختر —</option>
+          {% for m in managers %}<option value="{{ m.id }}" {% if form.manager_id==m.id %}selected{% endif %}>{{ m.full_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">القسم المسؤول</label>
+        <select name="department_id" class="form-control"><option value="">— اختر —</option>
+          {% for d in depts %}<option value="{{ d.id }}" {% if form.department_id==d.id %}selected{% endif %}>{{ d.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">اللون المميز</label><input type="color" name="color" class="form-control" value="{{ form.color or '#00b4d8' }}" style="height:44px;cursor:pointer"></div>
+    </div></div>
+  </div>
+  <div style="display:flex;gap:10px">
+    <button type="submit" class="btn btn-electric">{{ '💾 حفظ التعديلات' if is_edit else '➕ إضافة المشروع' }}</button>
+    <a href="{{ url_for('projects') }}" class="btn btn-ghost">إلغاء</a>
+  </div>
+</form>
+</div>
+{% endblock %}

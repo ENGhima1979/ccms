@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}الأرشيف{% endblock %}
+{% block page_title %}🗄️ الأرشيف{% endblock %}
+{% block page_sub %}{{ items|length }} مراسلة مؤرشفة{% endblock %}
+{% block content %}
+<div class="panel mb-24">
+  <form method="GET" class="search-bar">
+    <input class="search-input" name="q" value="{{ q }}" placeholder="🔍 بحث في الأرشيف...">
+    <button type="submit" class="btn btn-primary btn-sm">🔍 بحث</button>
+    <a href="{{ url_for('archive') }}" class="btn btn-ghost btn-sm">✕ مسح</a>
+  </form>
+</div>
+<div class="panel">
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>رقم المرجع</th><th>الموضوع</th><th>الجهة</th><th>المشروع</th><th>النوع</th><th>التاريخ</th><th>تاريخ الأرشفة</th><th class="no-print">إجراء</th></tr></thead>
+      <tbody>
+      {% for c in items %}
+      <tr>
+        <td><span style="font-family:monospace;font-size:11px;color:var(--sky)">{{ c.ref_num }}</span></td>
+        <td><a href="{{ url_for('view_correspondence', cid=c.id) }}" style="color:var(--text);font-weight:600">{{ c.subject[:55] }}</a></td>
+        <td style="font-size:12px;color:var(--text2)">{{ c.party[:25] }}</td>
+        <td>
+          {% if c.proj_name %}
+          <span style="display:flex;align-items:center;gap:5px">
+            <span style="width:8px;height:8px;border-radius:50%;background:{{ c.proj_color or '#00b4d8' }}"></span>
+            <span style="font-size:12px">{{ c.proj_name[:20] }}</span>
+          </span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td><span class="badge badge-{{ c.type }}">{{ '📤 صادر' if c.type=='out' else '📥 وارد' }}</span></td>
+        <td class="fs-12 text-muted">{{ c.date|ar_date }}</td>
+        <td class="fs-12 text-muted">{{ c.archived_date[:10]|ar_date if c.archived_date else '—' }}</td>
+        <td class="no-print">
+          <div style="display:flex;gap:4px">
+            <a href="{{ url_for('view_correspondence', cid=c.id) }}" class="btn btn-ghost btn-xs">👁</a>
+            <form method="POST" action="{{ url_for('unarchive_correspondence', cid=c.id) }}" style="display:inline">
+              <button type="submit" class="btn btn-outline btn-xs" title="إلغاء الأرشفة">↩️</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8"><div class="empty"><div class="empty-icon">🗄️</div><div class="empty-title">الأرشيف فارغ</div></div></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}جهات الاتصال{% endblock %}
+{% block page_title %}👥 جهات الاتصال الخارجية{% endblock %}
+{% block page_sub %}{{ items|length }} جهة مسجلة{% endblock %}
+{% block header_actions %}<a href="{{ url_for('new_contact') }}" class="btn btn-electric btn-sm">＋ جهة جديدة</a>{% endblock %}
+{% block content %}
+<div class="panel mb-24">
+  <form method="GET" class="search-bar">
+    <input class="search-input" name="q" value="{{ q }}" placeholder="🔍 بحث بالاسم أو المدينة أو شخص التواصل...">
+    <button type="submit" class="btn btn-primary btn-sm">🔍 بحث</button>
+    <a href="{{ url_for('contacts') }}" class="btn btn-ghost btn-sm">✕</a>
+  </form>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+{% for row in items %}
+{% set c = row.c %}
+<div class="panel" style="transition:.2s" onmouseover="this.style.borderColor='var(--sky)'" onmouseout="this.style.borderColor='var(--border)'">
+  <div style="padding:16px">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:800;color:var(--text)">{{ c.name }}</div>
+        {% if c.city %}<div style="font-size:11px;color:var(--text3);margin-top:2px">📍 {{ c.city }}</div>{% endif %}
+      </div>
+      <div style="display:flex;gap:4px">
+        <a href="{{ url_for('edit_contact', ctid=c.id) }}" class="btn btn-warn btn-xs">✏️</a>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--text2);margin-bottom:12px">
+      {% if c.contact_person %}<div>👤 {{ c.contact_person }}{% if c.contact_title %} — {{ c.contact_title }}{% endif %}</div>{% endif %}
+      {% if c.phone %}<div>📞 {{ c.phone }}</div>{% endif %}
+      {% if c.email %}<div>📧 {{ c.email }}</div>{% endif %}
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:rgba(0,119,182,.08);border-radius:var(--rs)">
+      <span style="font-size:11px;color:var(--text3)">عدد المراسلات</span>
+      <span class="badge badge-normal">{{ row.corr_count }}</span>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="empty" style="grid-column:span 4">
+  <div class="empty-icon">👥</div>
+  <div class="empty-title">لا توجد جهات اتصال</div>
+  <a href="{{ url_for('new_contact') }}" class="btn btn-electric" style="margin-top:16px">＋ إضافة جهة</a>
+</div>
+{% endfor %}
+</div>
+{% endblock %}

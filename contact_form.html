@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set is_edit = ctid is defined and ctid %}
+{% block title %}{{ 'تعديل جهة' if is_edit else 'جهة جديدة' }}{% endblock %}
+{% block page_title %}{{ '✏️ تعديل جهة الاتصال' if is_edit else '👥 إضافة جهة اتصال جديدة' }}{% endblock %}
+{% block header_actions %}<a href="{{ url_for('contacts') }}" class="btn btn-ghost btn-sm">← رجوع</a>{% endblock %}
+{% block content %}
+<div style="max-width:700px;margin:0 auto">
+<form method="POST">
+  <div class="form-section">
+    <div class="form-section-hdr">🏢 بيانات الجهة</div>
+    <div class="form-body"><div class="form-grid">
+      <div class="form-group form-full">
+        <label class="form-label"><span class="req">*</span> اسم الجهة</label>
+        <input name="name" class="form-control" value="{{ form.name or '' }}" required placeholder="الاسم الرسمي للشركة أو الجهة">
+      </div>
+      <div class="form-group"><label class="form-label">الاسم بالإنجليزية</label><input name="name_en" class="form-control" value="{{ form.name_en or '' }}"></div>
+      <div class="form-group"><label class="form-label">نوع الجهة</label>
+        <select name="org_type" class="form-control">
+          <option value="company" {% if (form.org_type or 'company')=='company' %}selected{% endif %}>🏢 شركة</option>
+          <option value="government" {% if form.org_type=='government' %}selected{% endif %}>🏛️ جهة حكومية</option>
+          <option value="contractor" {% if form.org_type=='contractor' %}selected{% endif %}>🔧 مقاول</option>
+          <option value="supplier" {% if form.org_type=='supplier' %}selected{% endif %}>📦 مورد</option>
+          <option value="client" {% if form.org_type=='client' %}selected{% endif %}>👤 عميل</option>
+        </select>
+      </div>
+      <div class="form-group"><label class="form-label">التصنيف</label><input name="category" class="form-control" value="{{ form.category or '' }}" placeholder="مثال: مقاول رئيسي، جهة تمويل..."></div>
+      <div class="form-group form-full"><label class="form-label">العنوان</label><input name="address" class="form-control" value="{{ form.address or '' }}"></div>
+      <div class="form-group"><label class="form-label">المدينة</label><input name="city" class="form-control" value="{{ form.city or '' }}"></div>
+      <div class="form-group"><label class="form-label">الدولة</label><input name="country" class="form-control" value="{{ form.country or 'المملكة العربية السعودية' }}"></div>
+      <div class="form-group"><label class="form-label">الهاتف</label><input name="phone" class="form-control" value="{{ form.phone or '' }}" placeholder="+966 11 000 0000"></div>
+      <div class="form-group"><label class="form-label">الفاكس</label><input name="fax" class="form-control" value="{{ form.fax or '' }}"></div>
+      <div class="form-group"><label class="form-label">البريد الإلكتروني</label><input type="email" name="email" class="form-control" value="{{ form.email or '' }}"></div>
+      <div class="form-group"><label class="form-label">الموقع الإلكتروني</label><input name="website" class="form-control" value="{{ form.website or '' }}" placeholder="https://..."></div>
+    </div></div>
+  </div>
+  <div class="form-section">
+    <div class="form-section-hdr">👤 شخص التواصل</div>
+    <div class="form-body"><div class="form-grid">
+      <div class="form-group"><label class="form-label">الاسم</label><input name="contact_person" class="form-control" value="{{ form.contact_person or '' }}" placeholder="اسم الشخص المسؤول"></div>
+      <div class="form-group"><label class="form-label">المسمى الوظيفي</label><input name="contact_title" class="form-control" value="{{ form.contact_title or '' }}"></div>
+      <div class="form-group"><label class="form-label">هاتف المسؤول</label><input name="contact_phone" class="form-control" value="{{ form.contact_phone or '' }}"></div>
+      <div class="form-group"><label class="form-label">بريد المسؤول</label><input type="email" name="contact_email" class="form-control" value="{{ form.contact_email or '' }}"></div>
+    </div>
+    <div class="form-group mt-8"><label class="form-label">ملاحظات</label>
+      <textarea name="notes" class="form-control" style="min-height:80px" placeholder="أي ملاحظات إضافية...">{{ form.notes or '' }}</textarea>
+    </div>
+    </div>
+  </div>
+  <div style="display:flex;gap:10px">
+    <button type="submit" class="btn btn-electric">{{ '💾 حفظ التعديلات' if is_edit else '➕ إضافة الجهة' }}</button>
+    <a href="{{ url_for('contacts') }}" class="btn btn-ghost">إلغاء</a>
+  </div>
+</form>
+</div>
+{% endblock %}

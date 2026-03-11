@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Tahoma', 'Arial Unicode MS', 'Arial', sans-serif;
+    font-size: 13px;
+    color: #1a1a2e;
+    direction: rtl;
+    padding: 0;
+    background: #fff;
+  }
+  .page { width:210mm; min-height:297mm; padding:20mm 18mm 18mm; position:relative; }
+
+  /* Header */
+  .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:12px; border-bottom:3px solid {{ primary_color }}; margin-bottom:16px; }
+  .co-name { font-size:22px; font-weight:900; color:{{ primary_color }}; line-height:1.3; }
+  .co-name-en { font-size:12px; color:#666; font-weight:400; }
+  .co-details { text-align:left; font-size:11px; color:#555; line-height:1.8; direction:ltr; }
+
+  /* Reference Bar */
+  .ref-bar { background:#f0f7ff; border:1px solid #bde0fe; border-radius:6px; padding:10px 14px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; }
+  .ref-item { text-align:center; }
+  .ref-label { font-size:10px; color:#666; }
+  .ref-value { font-size:13px; font-weight:700; color:#0077b6; }
+
+  /* Priority badge */
+  .priority-badge { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+  .urgent { background:#fee; color:#c00; border:1px solid #fcc; }
+  .high { background:#fff3e0; color:#e65100; border:1px solid #ffcc80; }
+  .normal { background:#e8f5e9; color:#2e7d32; border:1px solid #a5d6a7; }
+  .low { background:#f3e5f5; color:#6a1b9a; border:1px solid #ce93d8; }
+
+  /* Body */
+  .recipient { font-size:14px; font-weight:700; margin:16px 0 4px; }
+  .salutation { color:#555; margin-bottom:12px; }
+  .subject-line { background:{{ primary_color }}15; border-right:4px solid {{ primary_color }}; padding:10px 14px; margin:14px 0; border-radius:0 6px 6px 0; }
+  .subject-label { font-size:11px; color:#666; }
+  .subject-text { font-size:14px; font-weight:800; color:#0d1b2a; }
+
+  .body-text { line-height:2; text-align:justify; font-size:13px; color:#2d2d2d; white-space:pre-wrap; }
+  .closing { margin-top:20px; color:#444; font-size:13px; }
+
+  /* Signature */
+  .signature { margin-top:30px; text-align:right; }
+  .sig-line { border-top:1.5px solid {{ primary_color }}; width:200px; margin-right:0; margin-bottom:6px; }
+  .sig-name { font-weight:800; font-size:13px; }
+  .sig-title { font-size:11px; color:#666; }
+
+  /* Attachments */
+  .attachments { margin-top:20px; padding:10px 14px; background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px; }
+  .att-title { font-weight:700; font-size:12px; margin-bottom:6px; color:#0077b6; }
+  .att-item { font-size:11px; color:#555; padding:2px 0; }
+  .att-item::before { content:'📎 '; }
+
+  /* Footer */
+  .footer { position:fixed; bottom:12mm; left:18mm; right:18mm; border-top:1px solid #e0e0e0; padding-top:6px; display:flex; justify-content:space-between; font-size:9px; color:#999; }
+
+  /* Confidentiality */
+  .confidential { text-align:center; margin-top:10px; font-size:10px; color:#999; font-style:italic; }
+
+  /* Print */
+  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="co-name">{{ company_name }}</div>
+      {% if company_name_en %}<div class="co-name-en">{{ company_name_en }}</div>{% endif %}
+      {% if cr_number %}<div style="font-size:11px;color:#777;margin-top:4px">س.ت: {{ cr_number }}</div>{% endif %}
+    </div>
+    <div class="co-details">
+      {% if phone %}📞 {{ phone }}<br>{% endif %}
+      {% if email %}✉ {{ email }}<br>{% endif %}
+      {% if address %}{{ address }}{% endif %}
+    </div>
+  </div>
+
+  <!-- Reference Bar -->
+  <div class="ref-bar">
+    <div class="ref-item">
+      <div class="ref-label">رقم المرجع</div>
+      <div class="ref-value">{{ ref_num }}</div>
+    </div>
+    <div class="ref-item">
+      <div class="ref-label">التاريخ</div>
+      <div class="ref-value">{{ date }}</div>
+    </div>
+    <div class="ref-item">
+      <div class="ref-label">النوع</div>
+      <div class="ref-value">{{ type_label }}</div>
+    </div>
+    <div class="ref-item">
+      <div class="ref-label">الأولوية</div>
+      <div class="priority-badge {{ priority }}">{{ priority_label }}</div>
+    </div>
+    {% if project_name %}
+    <div class="ref-item">
+      <div class="ref-label">المشروع</div>
+      <div class="ref-value" style="font-size:11px">{{ project_name }}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Recipient -->
+  <div class="recipient">السادة / {{ party }}</div>
+  <div class="salutation">المحترمين</div>
+  <div style="color:#555;margin-bottom:16px">السلام عليكم ورحمة الله وبركاته،،،</div>
+
+  <!-- Subject -->
+  <div class="subject-line">
+    <div class="subject-label">الموضوع</div>
+    <div class="subject-text">{{ subject }}</div>
+  </div>
+
+  <!-- Body -->
+  <div class="body-text">{{ body }}</div>
+
+  <!-- Closing -->
+  <div class="closing">وتفضلوا بقبول فائق الاحترام والتقدير،،،</div>
+
+  <!-- Signature -->
+  <div class="signature">
+    <div class="sig-line"></div>
+    <div class="sig-name">{{ company_name }}</div>
+    {% if sender_name %}<div class="sig-title">{{ sender_name }}{% if sender_title %} — {{ sender_title }}{% endif %}</div>{% endif %}
+  </div>
+
+  <!-- Attachments -->
+  {% if attachments %}
+  <div class="attachments">
+    <div class="att-title">المرفقات ({{ attachments|length }})</div>
+    {% for a in attachments %}
+    <div class="att-item">{{ a.filename }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="confidential">هذه المراسلة سرية وموجهة للمعنيين فقط</div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <span>{{ company_name }}</span>
+    <span>{{ ref_num }} | {{ date }}</span>
+    <span>صفحة 1</span>
+  </div>
+
+</div>
+</body>
+</html>

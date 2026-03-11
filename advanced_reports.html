@@ -1,0 +1,265 @@
+{% extends 'base.html' %}
+{% block title %}التقارير المتقدمة{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center">
+  <h1 class="page-title"><i class="bi bi-graph-up-arrow"></i> التقارير المتقدمة</h1>
+  <div class="d-flex gap-2">
+    <button class="btn btn-outline-primary" onclick="loadAiInsights()">
+      <i class="bi bi-robot"></i> تحليل ذكي
+    </button>
+    <a href="{{ url_for('reports') }}" class="btn btn-outline-secondary">التقارير الأساسية</a>
+  </div>
+</div>
+
+<!-- SLA Cards -->
+{% set sla = sla_data %}
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="stat-card"><div class="stat-icon">📊</div>
+      <div class="stat-value">{{ sla.total or 0 }}</div>
+      <div class="stat-label">إجمالي (3 أشهر)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="border-color:#06ffa5">
+      <div class="stat-icon">✅</div>
+      <div class="stat-value" style="color:#06ffa5">{{ sla.on_time or 0 }}</div>
+      <div class="stat-label">في الموعد</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="border-color:#ff4d6d">
+      <div class="stat-icon">⚠️</div>
+      <div class="stat-value" style="color:#ff4d6d">{{ sla.overdue or 0 }}</div>
+      <div class="stat-label">متأخرة</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="stat-card" style="border-color:#ffd166">
+      <div class="stat-icon">⏱️</div>
+      <div class="stat-value" style="color:#ffd166">{{ (sla.avg_days or 0)|round(1) }}</div>
+      <div class="stat-label">متوسط الأيام</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Monthly Trend -->
+  <div class="col-lg-8">
+    <div class="card h-100">
+      <div class="card-header"><h6 class="mb-0">📈 الاتجاه الشهري (12 شهر)</h6></div>
+      <div class="card-body"><canvas id="monthlyChart" height="110"></canvas></div>
+    </div>
+  </div>
+  <!-- AI Categories -->
+  <div class="col-lg-4">
+    <div class="card h-100">
+      <div class="card-header"><h6 class="mb-0">🤖 تصنيف AI</h6></div>
+      <div class="card-body">
+        {% if ai_cats %}
+        <canvas id="aiCatChart" height="200"></canvas>
+        {% else %}
+        <div class="text-center text-muted py-4">
+          <div style="font-size:2rem">🤖</div>
+          <p>لا يوجد تصنيف AI بعد<br>
+          <small>افتح أي معاملة واضغط "تحليل AI"</small></p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- By Project -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><h6 class="mb-0">🏗️ توزيع المعاملات على المشاريع</h6></div>
+      <div class="card-body">
+        {% for p in by_project %}
+        <div class="mb-3">
+          <div class="d-flex justify-content-between mb-1">
+            <span class="fw-medium">{{ p.name }}</span>
+            <span class="text-muted">{{ p.cnt }} معاملة</span>
+          </div>
+          {% set pct = (p.cnt / by_project[0].cnt * 100) if by_project else 0 %}
+          <div class="progress" style="height:8px">
+            <div class="progress-bar" style="width:{{ pct }}%;background:{{ p.color or '#00b4d8' }}"></div>
+          </div>
+          <small class="text-muted">✅ {{ p.approved }} موافق | ⚡ {{ p.high_priority }} أولوية عالية</small>
+        </div>
+        {% else %}
+        <p class="text-muted text-center py-3">لا توجد بيانات</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- User Productivity -->
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header"><h6 class="mb-0">👥 إنتاجية المستخدمين</h6></div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead><tr>
+            <th>المستخدم</th><th class="text-center">صادر</th>
+            <th class="text-center">وارد</th><th class="text-center">معتمد</th>
+          </tr></thead>
+          <tbody>
+          {% for u in user_stats %}
+          {% if u.total > 0 %}
+          <tr>
+            <td>
+              <div class="fw-medium">{{ u.full_name }}</div>
+              <small class="text-muted">{{ u.job_title or '' }}</small>
+            </td>
+            <td class="text-center"><span class="badge" style="background:rgba(0,180,216,.2);color:#00b4d8">{{ u.out_count }}</span></td>
+            <td class="text-center"><span class="badge" style="background:rgba(6,255,165,.2);color:#06ffa5">{{ u.in_count }}</span></td>
+            <td class="text-center"><span class="badge bg-success">{{ u.approved }}</span></td>
+          </tr>
+          {% endif %}
+          {% else %}
+          <tr><td colspan="4" class="text-center text-muted py-3">لا توجد بيانات</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Top Parties -->
+<div class="card mb-4">
+  <div class="card-header"><h6 class="mb-0">🏢 أكثر الجهات تواصلاً</h6></div>
+  <div class="card-body">
+    <canvas id="partyChart" height="60"></canvas>
+  </div>
+</div>
+
+<!-- AI Insights Panel -->
+<div class="card mb-4" id="aiInsightsCard" style="display:none">
+  <div class="card-header" style="background:linear-gradient(135deg,rgba(0,180,216,.1),rgba(6,255,165,.1))">
+    <h6 class="mb-0">🧠 تحليل ذكي للبيانات</h6>
+  </div>
+  <div class="card-body" id="aiInsightsBody">
+    <div class="text-center py-3"><div class="spinner-border text-info"></div><p class="mt-2">جارٍ التحليل...</p></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+const chartDefaults = {
+  color: '#a0aec0',
+  plugins: { legend: { labels: { color: '#a0aec0', font: { family: 'Cairo' } } } },
+  scales: {
+    x: { ticks: { color: '#a0aec0' }, grid: { color: 'rgba(255,255,255,.05)' } },
+    y: { ticks: { color: '#a0aec0' }, grid: { color: 'rgba(255,255,255,.05)' } }
+  }
+};
+
+// Monthly Trend
+const monthlyRaw = {{ monthly | tojson }};
+const months = [...new Set(monthlyRaw.map(r => r.month))].sort();
+const typeLabels = { 'out': 'صادر', 'in': 'وارد', 'internal': 'داخلي' };
+const typeColors = { 'out': '#00b4d8', 'in': '#06ffa5', 'internal': '#ffd166' };
+
+const datasets = ['out','in','internal'].map(t => ({
+  label: typeLabels[t],
+  data: months.map(m => {
+    const r = monthlyRaw.find(x => x.month === m && x.type === t);
+    return r ? r.cnt : 0;
+  }),
+  borderColor: typeColors[t],
+  backgroundColor: typeColors[t] + '22',
+  tension: 0.4, fill: true, pointRadius: 4,
+}));
+
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'line',
+  data: { labels: months, datasets },
+  options: { ...chartDefaults, responsive: true }
+});
+
+// AI Categories
+{% if ai_cats %}
+const aiCats = {{ ai_cats | tojson }};
+new Chart(document.getElementById('aiCatChart'), {
+  type: 'doughnut',
+  data: {
+    labels: aiCats.map(c => c.ai_category),
+    datasets: [{ data: aiCats.map(c => c.cnt),
+      backgroundColor: ['#00b4d8','#06ffa5','#ffd166','#ff4d6d','#a78bfa','#fb923c','#34d399'],
+    }]
+  },
+  options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#a0aec0', font: { family: 'Cairo' } } } } }
+});
+{% endif %}
+
+// Top Parties
+const partyRaw = {{ by_party | tojson }};
+const parties  = [...new Set(partyRaw.map(r => r.party))].slice(0, 10);
+new Chart(document.getElementById('partyChart'), {
+  type: 'bar',
+  data: {
+    labels: parties,
+    datasets: ['out','in'].map(t => ({
+      label: typeLabels[t],
+      data: parties.map(p => {
+        const r = partyRaw.find(x => x.party === p && x.type === t);
+        return r ? r.cnt : 0;
+      }),
+      backgroundColor: typeColors[t] + 'cc',
+    }))
+  },
+  options: { ...chartDefaults, responsive: true, scales: {
+    ...chartDefaults.scales,
+    x: { ...chartDefaults.scales.x, stacked: true },
+    y: { ...chartDefaults.scales.y, stacked: true }
+  }}
+});
+
+// AI Insights
+function loadAiInsights() {
+  document.getElementById('aiInsightsCard').style.display = '';
+  document.getElementById('aiInsightsBody').innerHTML = 
+    '<div class="text-center py-3"><div class="spinner-border text-info"></div><p class="mt-2 text-muted">جارٍ تحليل البيانات بالذكاء الاصطناعي...</p></div>';
+  
+  fetch('/api/ai/stats')
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        document.getElementById('aiInsightsBody').innerHTML = 
+          `<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> ${data.error}</div>`;
+        return;
+      }
+      const d = data.data;
+      document.getElementById('aiInsightsBody').innerHTML = `
+        <div class="row g-3">
+          <div class="col-md-6">
+            <h6 class="text-danger">⚠️ أبرز المشكلات</h6>
+            <ul>${(d.top_issues||[]).map(i=>`<li>${i}</li>`).join('')}</ul>
+          </div>
+          <div class="col-md-6">
+            <h6 class="text-success">✅ الاتجاهات الإيجابية</h6>
+            <ul>${(d.positive_trends||[]).map(i=>`<li>${i}</li>`).join('')}</ul>
+          </div>
+          <div class="col-md-6">
+            <h6 class="text-info">💡 التوصيات</h6>
+            <ul>${(d.recommendations||[]).map(i=>`<li>${i}</li>`).join('')}</ul>
+          </div>
+          <div class="col-md-6">
+            <h6 class="text-warning">🔴 مناطق الخطر</h6>
+            <ul>${(d.risk_areas||[]).map(i=>`<li>${i}</li>`).join('')}</ul>
+          </div>
+          <div class="col-12">
+            <div class="alert alert-info">📊 ${d.workload_assessment||''}</div>
+          </div>
+        </div>`;
+    })
+    .catch(e => {
+      document.getElementById('aiInsightsBody').innerHTML = 
+        `<div class="alert alert-danger">خطأ: ${e.message}</div>`;
+    });
+}
+</script>
+{% endblock %}
