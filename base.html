@@ -388,11 +388,16 @@ textarea.form-control{min-height:120px;resize:vertical}
 }
 
 /* ── RESPONSIVE ─────────────────────────── */
+.mobile-menu-btn{display:none}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
+.sidebar-overlay.show{display:block}
 @media(max-width:900px){
   :root{--sidebar:0px}
-  .sidebar{transform:translateX(100%)}
-  .sidebar.open{transform:translateX(0);width:260px}
+  .mobile-menu-btn{display:flex!important}
+  .sidebar{transform:translateX(260px);z-index:200;transition:transform .3s ease}
+  .sidebar.open{transform:translateX(0)}
   .main-content{margin-right:0}
+  .header{right:0!important}
 }
 @media(max-width:768px){
   [class*="col-md"]{flex:0 0 100%;max-width:100%}
@@ -411,6 +416,8 @@ textarea.form-control{min-height:120px;resize:vertical}
 </head>
 <body>
 <div class="app">
+
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
 
 <!-- ── SIDEBAR ─────────────────────────── -->
 <aside class="sidebar" id="sidebar">
@@ -525,6 +532,7 @@ textarea.form-control{min-height:120px;resize:vertical}
 
 <!-- ── HEADER ─────────────────────────── -->
 <header class="header">
+  <button class="hdr-btn mobile-menu-btn" id="menuToggle" onclick="toggleSidebar()" title="القائمة">☰</button>
   <div class="header-title">
     <h1>{% block page_title %}الرئيسية{% endblock %}</h1>
     <p>{% block page_sub %}نظام إدارة الاتصالات الإدارية{% endblock %}</p>
@@ -603,6 +611,17 @@ document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab=>{
 
 // Mobile sidebar toggle
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal()})
+
+function toggleSidebar(){
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('show');
+}
+function closeSidebar(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('show');
+}
 
 // PWA Service Worker
 if('serviceWorker' in navigator){
