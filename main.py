@@ -4,6 +4,13 @@ CCMS — Corporate Communication Management System
 Flask Application — Professional Edition 2.0
 """
 import os, sys, json
+from security import (
+    log_audit, get_audit_log, AUDIT_ACTIONS,
+    get_user_corr_permission, can_view_corr, can_edit_corr, can_manage_corr,
+    grant_permission, revoke_permission, get_corr_permissions,
+    PERM_VIEW, PERM_COMMENT, PERM_EDIT, PERM_MANAGE, PERM_LABELS,
+    add_digital_stamp_to_pdf, verify_document_hash, generate_document_hash,
+)
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -210,7 +217,7 @@ def login():
             conn = get_db()
             conn.execute("UPDATE users SET last_login=?,login_count=login_count+1 WHERE id=?",
                          (now(), u['id']))
-            conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,ip_address,created_at)
+            conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,ip_address,user_agent,created_at)
                             VALUES (?,?,?,?,?,?,?)""",
                          (new_id(),u['company_id'],u['id'],u['username'],'LOGIN',
                           request.remote_addr, now()))
@@ -447,6 +454,11 @@ def new_correspondence():
         date_       = request.form.get('date', today())
         due_date    = request.form.get('due_date','') or None
         status      = request.form.get('status','draft')
+        # إذا كان هناك سير عمل افتراضي نشط، أجبر الحالة لتمر على مسار الموافقة
+        if status not in ('draft',):
+            _wf_chk = conn.execute("SELECT id FROM workflow_definitions WHERE company_id=? AND is_default=1 AND is_active=1",(cid,)).fetchone()
+            if _wf_chk:
+                status = 'pending'
         reply_st    = request.form.get('reply_status','pending') if type_=='in' else None
         tags        = json.dumps(request.form.getlist('tags'))
 
@@ -503,11 +515,7 @@ def new_correspondence():
                 app.logger.warning(f'Workflow creation skipped: {wf_err}')
 
         # Audit log
-        conn.execute("""INSERT INTO audit_log
-            (id,company_id,user_id,username,action,entity,entity_id,new_value,ip_address,created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (new_id(),cid,session['user_id'],session['username'],
-             'CREATE','correspondence',corr_id,ref_num,request.remote_addr,now()))
+        log_audit(conn,'CORR_CREATE','correspondence',corr_id,new_value=ref_num)
 
         conn.commit(); conn.close()
         flash(f'✅ تم إنشاء المراسلة <strong>{ref_num}</strong> بنجاح','success')
@@ -536,8 +544,9 @@ def view_correspondence(cid):
         flash('المراسلة غير موجودة','error'); conn.close()
         return redirect(url_for('dashboard'))
 
-    pid_list = get_user_project_ids()
-    if pid_list is not None and item['project_id'] and item['project_id'] not in pid_list:
+    # Granular permission check
+    user_perm = get_user_corr_permission(conn, session['user_id'], cid, session['company_id'])
+    if user_perm < PERM_VIEW:
         flash('ليس لديك صلاحية عرض هذه المراسلة','error'); conn.close()
         return redirect(url_for('dashboard'))
 
@@ -550,10 +559,16 @@ def view_correspondence(cid):
     qr_data = f"CCMS|{item['ref_num']}|{item['subject']}|{item['date']}|{item['party']}"
     qr_img  = generate_qr_svg(qr_data)
 
+    audit_entries = get_audit_log(conn, session['company_id'],
+                                   entity='correspondence', entity_id=cid, limit=20)
+    log_audit(conn, 'CORR_VIEW', 'correspondence', cid)
+    conn.commit()
     conn.close()
     return render_template('correspondence_detail.html',
         item=item, attachments=attachments, comments=comments,
-        wf_steps=wf_steps, related=related, qr_img=qr_img)
+        wf_steps=wf_steps, related=related, qr_img=qr_img,
+        user_perm=user_perm, audit_entries=audit_entries,
+        PERM_EDIT=PERM_EDIT, PERM_MANAGE=PERM_MANAGE)
 
 @app.route('/correspondence/<cid>/edit', methods=['GET','POST'])
 @login_required
@@ -565,10 +580,10 @@ def edit_correspondence(cid):
         flash('المراسلة غير موجودة','error'); conn.close()
         return redirect(url_for('dashboard'))
 
-    pid_list = get_user_project_ids()
-    if pid_list is not None and item['project_id'] and item['project_id'] not in pid_list:
+    # Granular permission check
+    if not can_edit_corr(conn, session['user_id'], cid, session['company_id']):
         flash('ليس لديك صلاحية تعديل هذه المراسلة','error'); conn.close()
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('view_correspondence', cid=cid))
 
     projects    = get_visible_projects(conn)
     contacts    = conn.execute("SELECT * FROM contacts WHERE company_id=? AND is_active=1 ORDER BY name",(co,)).fetchall()
@@ -607,10 +622,7 @@ def edit_correspondence(cid):
                 conn.execute("INSERT INTO attachments (id,correspondence_id,filename,original_name,file_size,mime_type,uploaded_by,uploaded_at) VALUES (?,?,?,?,?,?,?,?)",
                              (new_id(),cid,fn,secure_filename(f.filename),fsize,f.content_type,session['user_id'],now()))
 
-        conn.execute("""INSERT INTO audit_log
-            (id,company_id,user_id,username,action,entity,entity_id,ip_address,created_at)
-            VALUES (?,?,?,?,?,?,?,?,?)""",
-            (new_id(),co,session['user_id'],session['username'],'EDIT','correspondence',cid,request.remote_addr,now()))
+        log_audit(conn, 'CORR_EDIT', 'correspondence', cid)
         conn.commit(); conn.close()
         flash('✅ تم تحديث المراسلة بنجاح','success')
         return redirect(url_for('view_correspondence', cid=cid))
@@ -627,12 +639,13 @@ def delete_correspondence(cid):
         flash('ليس لديك صلاحية الحذف','error')
         return redirect(url_for('dashboard'))
     conn = get_db()
+    # Permission check
+    if not can_manage_corr(conn, session['user_id'], cid, session['company_id']):
+        flash('ليس لديك صلاحية حذف هذه المراسلة','error'); conn.close()
+        return redirect(url_for('view_correspondence', cid=cid))
     conn.execute("UPDATE correspondence SET is_deleted=1,updated_at=? WHERE id=? AND company_id=?",
                  (now(), cid, session['company_id']))
-    conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,entity,entity_id,ip_address,created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?)""",
-                 (new_id(),session['company_id'],session['user_id'],session['username'],
-                  'DELETE','correspondence',cid,request.remote_addr,now()))
+    log_audit(conn, 'CORR_DELETE', 'correspondence', cid)
     conn.commit(); conn.close()
     flash('تم حذف المراسلة','info')
     return redirect(url_for('dashboard'))
@@ -1712,6 +1725,176 @@ def settings():
 
     conn.close()
     return render_template('settings.html', co=co, depts=depts, wf_defs=wf_defs, sla_rules=sla_rules)
+
+
+
+
+# ══════════════════════════════════════════════════════
+#  AUDIT TRAIL — سجل التدقيق
+# ══════════════════════════════════════════════════════
+@app.route('/audit-log')
+@admin_required
+def audit_log_view():
+    """صفحة سجل التدقيق الكاملة"""
+    conn = get_db()
+    cid  = session['company_id']
+    page = int(request.args.get('page', 1))
+    per  = 50
+    offset = (page - 1) * per
+
+    entity    = request.args.get('entity', '')
+    entity_id = request.args.get('entity_id', '')
+    user_filter = request.args.get('user_id', '')
+    action_filter = request.args.get('action', '')
+
+    sql = """SELECT al.*, u.full_name FROM audit_log al
+             LEFT JOIN users u ON al.user_id = u.id
+             WHERE al.company_id=?"""
+    params = [cid]
+    if entity:       sql += " AND al.entity=?";    params.append(entity)
+    if entity_id:    sql += " AND al.entity_id=?"; params.append(entity_id)
+    if user_filter:  sql += " AND al.user_id=?";   params.append(user_filter)
+    if action_filter:sql += " AND al.action=?";    params.append(action_filter)
+    sql += " ORDER BY al.created_at DESC LIMIT ? OFFSET ?"
+    params += [per, offset]
+
+    logs  = conn.execute(sql, params).fetchall()
+    total = conn.execute("SELECT COUNT(*) as c FROM audit_log WHERE company_id=?", (cid,)).fetchone()['c']
+    users = conn.execute("SELECT id, full_name FROM users WHERE company_id=? AND is_active=1", (cid,)).fetchall()
+    conn.close()
+    return render_template('audit_log.html', logs=logs, total=total,
+                           page=page, per=per, users=users,
+                           AUDIT_ACTIONS=AUDIT_ACTIONS,
+                           filters={'entity':entity,'user_id':user_filter,'action':action_filter})
+
+
+# ══════════════════════════════════════════════════════
+#  GRANULAR PERMISSIONS — صلاحيات المراسلات
+# ══════════════════════════════════════════════════════
+@app.route('/correspondence/<cid>/permissions')
+@login_required
+def corr_permissions(cid):
+    """إدارة صلاحيات مراسلة"""
+    conn = get_db()
+    company_id = session['company_id']
+    if not can_manage_corr(conn, session['user_id'], cid, company_id):
+        flash('لا تملك صلاحية إدارة هذه المراسلة','error')
+        conn.close()
+        return redirect(url_for('view_correspondence', cid=cid))
+    item  = conn.execute("SELECT * FROM correspondence WHERE id=?", (cid,)).fetchone()
+    perms = get_corr_permissions(conn, cid)
+    users = conn.execute("""SELECT id, full_name, username, role FROM users
+                            WHERE company_id=? AND is_active=1
+                            AND id != ? ORDER BY full_name""",
+                         (company_id, session['user_id'])).fetchall()
+    conn.close()
+    return render_template('corr_permissions.html',
+                           item=item, perms=perms, users=users,
+                           PERM_LABELS=PERM_LABELS)
+
+
+@app.route('/correspondence/<cid>/permissions/grant', methods=['POST'])
+@login_required
+def grant_corr_permission(cid):
+    conn = get_db()
+    if not can_manage_corr(conn, session['user_id'], cid, session['company_id']):
+        conn.close()
+        return jsonify({'error': 'غير مصرح'}), 403
+    user_id = request.form.get('user_id')
+    level   = int(request.form.get('level', 1))
+    grant_permission(conn, cid, user_id, level, session['user_id'])
+    log_audit(conn, 'PERM_GRANT', 'correspondence', cid,
+              new_value=f'user:{user_id} level:{level}')
+    conn.commit(); conn.close()
+    flash('✅ تم منح الصلاحية', 'success')
+    return redirect(url_for('corr_permissions', cid=cid))
+
+
+@app.route('/correspondence/<cid>/permissions/<uid>/revoke', methods=['POST'])
+@login_required
+def revoke_corr_permission(cid, uid):
+    conn = get_db()
+    if not can_manage_corr(conn, session['user_id'], cid, session['company_id']):
+        conn.close()
+        return jsonify({'error': 'غير مصرح'}), 403
+    revoke_permission(conn, cid, uid)
+    log_audit(conn, 'PERM_REVOKE', 'correspondence', cid, new_value=f'user:{uid}')
+    conn.commit(); conn.close()
+    flash('تم سحب الصلاحية', 'info')
+    return redirect(url_for('corr_permissions', cid=cid))
+
+
+# ══════════════════════════════════════════════════════
+#  DIGITAL STAMP — الختم الرقمي
+# ══════════════════════════════════════════════════════
+@app.route('/correspondence/<cid>/export-stamped')
+@login_required
+def export_stamped_pdf(cid):
+    """تصدير PDF مع الختم الرقمي (للمراسلات المعتمدة فقط)"""
+    conn = get_db()
+    item = conn.execute("SELECT * FROM correspondence WHERE id=? AND is_deleted=0", (cid,)).fetchone()
+    if not item:
+        flash('المراسلة غير موجودة','error')
+        conn.close()
+        return redirect(url_for('dashboard'))
+
+    if item['workflow_status'] not in ('approved', None) and item['status'] != 'approved':
+        flash('الختم الرقمي متاح للمراسلات المعتمدة فقط','warning')
+        conn.close()
+        return redirect(url_for('view_correspondence', cid=cid))
+
+    co = conn.execute("SELECT * FROM companies WHERE id=?", (session['company_id'],)).fetchone()
+    d  = dict(item)
+    if item['project_id']:
+        proj = conn.execute("SELECT name FROM projects WHERE id=?", (item['project_id'],)).fetchone()
+        d['proj_name'] = proj['name'] if proj else ''
+    sender = conn.execute("SELECT full_name, job_title FROM users WHERE id=?", (item['created_by'],)).fetchone()
+    if sender:
+        d['sender_name']  = sender['full_name']
+        d['sender_title'] = sender['job_title'] or ''
+
+    # جلب اسم آخر معتمد
+    approver = conn.execute("""
+        SELECT u.full_name FROM workflow_steps ws
+        JOIN users u ON ws.completed_by = u.id
+        WHERE ws.correspondence_id=? AND ws.status='approved'
+        ORDER BY ws.completed_at DESC LIMIT 1
+    """, (cid,)).fetchone()
+    approver_name = approver['full_name'] if approver else session.get('full_name','')
+
+    atts = conn.execute("SELECT filename FROM attachments WHERE correspondence_id=?", (cid,)).fetchall()
+    log_audit(conn, 'CORR_EXPORT', 'correspondence', cid, new_value='stamped_pdf')
+    conn.commit(); conn.close()
+
+    from helpers import generate_letter_pdf
+    import io
+    pdf_data = generate_letter_pdf(d, dict(co), attachments=[dict(a) for a in atts])
+    stamped  = add_digital_stamp_to_pdf(pdf_data, d, dict(co), approver_name)
+
+    return send_file(io.BytesIO(stamped), as_attachment=False,
+                     download_name=f"{item['ref_num']}_معتمد.pdf",
+                     mimetype='application/pdf')
+
+
+@app.route('/verify/<doc_hash>')
+def verify_document(doc_hash):
+    """صفحة عامة للتحقق من صحة المستند"""
+    conn = get_db()
+    # البحث عن المراسلة بالـ hash
+    companies = conn.execute("SELECT * FROM companies WHERE is_active=1").fetchall()
+    found = None
+    for co in companies:
+        corrs = conn.execute("""SELECT * FROM correspondence
+            WHERE company_id=? AND workflow_status='approved'""", (co['id'],)).fetchall()
+        for corr in corrs:
+            expected = generate_document_hash(
+                corr['id'], corr['ref_num'], corr['subject'], co['id'])
+            if expected == doc_hash.upper():
+                found = {'corr': dict(corr), 'company': co['name']}
+                break
+        if found: break
+    conn.close()
+    return render_template('verify_document.html', found=found, hash=doc_hash)
 
 
 # ══════════════════════════════════════════════════════
