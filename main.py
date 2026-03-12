@@ -11,6 +11,8 @@ from security import (
     grant_permission, revoke_permission, get_corr_permissions,
     PERM_VIEW, PERM_COMMENT, PERM_EDIT, PERM_MANAGE, PERM_LABELS,
     add_digital_stamp_to_pdf, verify_document_hash, generate_document_hash,
+    save_user_signature, get_user_signature,
+    apply_signature_to_pdf, add_stamp_and_signature,
 )
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -2094,6 +2096,264 @@ def scheduler_run_now(job_id):
         except Exception as e:
             return jsonify({'error':str(e)}),500
     return jsonify({'error':'job not found'}),404
+
+
+
+
+# ══════════════════════════════════════════════════════
+#  MOBILE APP ROUTES — واجهة الجوال
+# ══════════════════════════════════════════════════════
+
+@app.route('/mobile')
+@login_required
+def mobile_app():
+    """واجهة الجوال المخصصة"""
+    conn = get_db()
+    cid  = session['company_id']
+    uid  = session['user_id']
+    today= datetime.date.today()
+
+    total   = conn.execute("SELECT COUNT(*) as c FROM correspondence WHERE company_id=? AND is_deleted=0", (cid,)).fetchone()['c']
+    urgent  = conn.execute("SELECT COUNT(*) as c FROM correspondence WHERE company_id=? AND priority='urgent' AND is_deleted=0", (cid,)).fetchone()['c']
+    in_count= conn.execute("SELECT COUNT(*) as c FROM correspondence WHERE company_id=? AND type='in' AND reply_status='pending' AND is_deleted=0", (cid,)).fetchone()['c']
+
+    overdue_sla = conn.execute("""
+        SELECT COUNT(*) as c FROM correspondence
+        WHERE company_id=? AND type='in' AND reply_status='pending'
+        AND is_deleted=0 AND date < date('now','-3 days')
+    """, (cid,)).fetchone()['c']
+
+    pending_wf = conn.execute("""
+        SELECT COUNT(*) as c FROM workflow_steps ws
+        JOIN correspondence c ON ws.correspondence_id=c.id
+        WHERE ws.assigned_to=? AND ws.status='pending' AND c.is_deleted=0
+    """, (uid,)).fetchone()['c']
+
+    wf_tasks = conn.execute("""
+        SELECT ws.id as step_id, ws.step_name, c.id, c.ref_num, c.subject, c.priority
+        FROM workflow_steps ws
+        JOIN correspondence c ON ws.correspondence_id=c.id
+        WHERE ws.assigned_to=? AND ws.status='pending' AND c.is_deleted=0
+        ORDER BY ws.created_at LIMIT 5
+    """, (uid,)).fetchall()
+
+    recent = conn.execute("""
+        SELECT c.id, c.ref_num, c.subject, c.type, c.priority, c.date, c.party
+        FROM correspondence c
+        WHERE c.company_id=? AND c.is_deleted=0
+        ORDER BY c.created_at DESC LIMIT 15
+    """, (cid,)).fetchall()
+
+    notif_count = conn.execute("""
+        SELECT COUNT(*) as c FROM notifications
+        WHERE user_id=? AND is_read=0
+    """, (uid,)).fetchone()['c']
+
+    conn.close()
+    return render_template('mobile.html',
+        total=total, urgent=urgent, in_count=in_count,
+        overdue_sla=overdue_sla, pending_wf=pending_wf,
+        wf_tasks=wf_tasks, recent=recent,
+        notif_count=notif_count,
+        session_name=session.get('full_name', session.get('username','')),
+        session_role=session.get('role',''))
+
+
+@app.route('/api/mobile/list')
+@login_required
+def api_mobile_list():
+    """API للقائمة في الجوال"""
+    conn = get_db()
+    cid  = session['company_id']
+    type_= request.args.get('type','all')
+    q    = request.args.get('q','').strip()
+
+    sql = """SELECT id,ref_num,subject,type,priority,date,party,status
+             FROM correspondence WHERE company_id=? AND is_deleted=0"""
+    params = [cid]
+    if type_ in ('in','out','internal'):
+        sql += " AND type=?"; params.append(type_)
+    if q:
+        sql += " AND (subject LIKE ? OR ref_num LIKE ? OR party LIKE ?)"; params += [f'%{q}%']*3
+    sql += " ORDER BY created_at DESC LIMIT 30"
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return jsonify({'items': [dict(r) for r in rows]})
+
+
+@app.route('/api/push/subscribe', methods=['POST'])
+@login_required
+def push_subscribe():
+    """تسجيل اشتراك Push Notifications"""
+    data = request.json
+    if not data: return jsonify({'error':'no data'}), 400
+    conn = get_db()
+    # حفظ الـ subscription في جدول notifications أو جدول جديد
+    conn.execute("""
+        INSERT OR REPLACE INTO push_subscriptions (id, user_id, subscription_json, created_at)
+        VALUES (?,?,?,?)
+    """, (new_id(), session['user_id'], json.dumps(data), now()))
+    conn.commit(); conn.close()
+    return jsonify({'success': True})
+
+
+@app.route('/api/push/vapid-public-key')
+def push_vapid_key():
+    """مفتاح VAPID العام للـ Push"""
+    key = app.config.get('VAPID_PUBLIC_KEY','')
+    return jsonify({'key': key})
+
+
+# ── Auto-redirect mobile users ──────────────────────
+@app.before_request
+def mobile_redirect():
+    """إعادة توجيه مستخدمي الجوال لواجهة الجوال"""
+    if request.endpoint and request.endpoint not in (
+        'mobile_app', 'api_mobile_list', 'push_subscribe',
+        'static', 'login', 'logout', 'offline', 'api_signature_status',
+    ) and request.path == '/' and 'user_id' in session:
+        ua = request.headers.get('User-Agent','').lower()
+        is_mobile = any(x in ua for x in ('android','iphone','ipad','mobile','webos'))
+        # Check if user wants mobile explicitly
+        if is_mobile and request.cookies.get('prefer_mobile','1') == '1':
+            return redirect(url_for('mobile_app'))
+
+
+# ══════════════════════════════════════════════════════
+#  DIGITAL SIGNATURE ROUTES — التوقيع الرقمي
+# ══════════════════════════════════════════════════════
+
+@app.route('/profile/signature', methods=['GET','POST'])
+@login_required
+def manage_signature():
+    """إدارة التوقيع الشخصي"""
+    conn = get_db()
+    uid  = session['user_id']
+    cid  = session['company_id']
+
+    if request.method == 'POST':
+        action = request.form.get('action','save')
+        if action == 'delete':
+            conn.execute("DELETE FROM user_signatures WHERE user_id=? AND company_id=?", (uid,cid))
+            conn.commit(); conn.close()
+            flash('تم حذف التوقيع','info')
+        else:
+            sig_data = request.form.get('sig_data','').strip()
+            sig_type = request.form.get('sig_type','drawn')
+            if not sig_data:
+                flash('لا يوجد توقيع للحفظ','error')
+                conn.close()
+                return redirect(url_for('manage_signature'))
+            save_user_signature(conn, uid, cid, sig_data, sig_type)
+            conn.commit(); conn.close()
+            flash('✅ تم حفظ توقيعك الرقمي','success')
+        return redirect(url_for('manage_signature'))
+
+    existing = get_user_signature(conn, uid, cid)
+    user = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    conn.close()
+    return render_template('signature_pad.html', existing=existing, user=user)
+
+
+@app.route('/correspondence/<cid>/sign', methods=['POST'])
+@login_required
+def sign_correspondence(cid):
+    """توقيع مراسلة رقمياً"""
+    conn    = get_db()
+    uid     = session['user_id']
+    company = session['company_id']
+
+    if not can_view_corr(conn, uid, cid, company):
+        conn.close()
+        return jsonify({'error': 'غير مصرح'}), 403
+
+    sig_data = request.form.get('sig_data') or get_user_signature(conn, uid, company)
+    if not sig_data:
+        conn.close()
+        return jsonify({'error': 'لا يوجد توقيع — يرجى إنشاء توقيعك أولاً'}), 400
+
+    sign_role = request.form.get('role', 'approver')
+
+    # احفظ التوقيع المُطبَّق على هذه المراسلة
+    conn.execute("""
+        INSERT OR REPLACE INTO correspondence_signatures
+        (id, correspondence_id, user_id, sig_data, signed_at, sign_role)
+        VALUES (?,?,?,?,?,?)
+    """, (new_id(), cid, uid, sig_data, now(), sign_role))
+
+    log_audit(conn, 'CORR_EDIT', 'correspondence', cid, new_value=f'signed:{sign_role}')
+    conn.commit(); conn.close()
+
+    flash('✅ تم تطبيق توقيعك على المراسلة','success')
+    return redirect(url_for('view_correspondence', cid=cid))
+
+
+@app.route('/correspondence/<cid>/export-signed')
+@login_required
+def export_signed_pdf(cid):
+    """تصدير PDF مع التوقيع الخطي + الختم الرقمي"""
+    conn = get_db()
+    item = conn.execute("SELECT * FROM correspondence WHERE id=? AND is_deleted=0",(cid,)).fetchone()
+    if not item:
+        flash('المراسلة غير موجودة','error'); conn.close()
+        return redirect(url_for('dashboard'))
+
+    co   = conn.execute("SELECT * FROM companies WHERE id=?", (session['company_id'],)).fetchone()
+    d    = dict(item)
+
+    if item['project_id']:
+        proj = conn.execute("SELECT name FROM projects WHERE id=?",(item['project_id'],)).fetchone()
+        d['proj_name'] = proj['name'] if proj else ''
+
+    sender = conn.execute("SELECT full_name,job_title FROM users WHERE id=?",(item['created_by'],)).fetchone()
+    if sender:
+        d['sender_name']  = sender['full_name']
+        d['sender_title'] = sender['job_title'] or ''
+
+    # جلب التوقيع المحفوظ للمستخدم الحالي أو آخر موقّع
+    sig_data = get_user_signature(conn, session['user_id'], session['company_id'])
+    if not sig_data:
+        # جرب آخر توقيع مُطبَّق على المراسلة
+        last_sig = conn.execute("""
+            SELECT cs.sig_data, u.full_name, u.job_title
+            FROM correspondence_signatures cs
+            JOIN users u ON cs.user_id=u.id
+            WHERE cs.correspondence_id=?
+            ORDER BY cs.signed_at DESC LIMIT 1
+        """, (cid,)).fetchone()
+        if last_sig:
+            sig_data = last_sig['sig_data']
+
+    atts = conn.execute("SELECT filename FROM attachments WHERE correspondence_id=?",(cid,)).fetchall()
+    user = conn.execute("SELECT full_name,job_title FROM users WHERE id=?",(session['user_id'],)).fetchone()
+
+    log_audit(conn,'CORR_EXPORT','correspondence',cid,new_value='signed_pdf')
+    conn.commit(); conn.close()
+
+    from helpers import generate_letter_pdf
+    import io
+    pdf_data = generate_letter_pdf(d, dict(co), attachments=[dict(a) for a in atts])
+
+    # أضف التوقيع + الختم
+    final_pdf = add_stamp_and_signature(
+        pdf_data, d, dict(co),
+        approver_name  = user['full_name'] if user else session.get('username',''),
+        approver_title = user['job_title'] if user else '',
+        sig_data_b64   = sig_data)
+
+    return send_file(io.BytesIO(final_pdf), as_attachment=False,
+                     download_name=f"{item['ref_num']}_موقّع.pdf",
+                     mimetype='application/pdf')
+
+
+# ── API: get user signature status ──
+@app.route('/api/signature/status')
+@login_required
+def api_signature_status():
+    conn = get_db()
+    sig  = get_user_signature(conn, session['user_id'], session['company_id'])
+    conn.close()
+    return jsonify({'has_signature': bool(sig), 'preview': sig[:100] if sig else None})
 
 
 # ══════════════════════════════════════════════════════
