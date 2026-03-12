@@ -11,8 +11,9 @@ DB_PATH = os.path.join(os.path.dirname(__file__), 'instance', 'ccms.db')
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)  # 30s timeout لمنع database locked
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")   # WAL mode يسمح بقراءات متزامنة
     conn.execute("PRAGMA foreign_keys = OFF")
     conn.execute("PRAGMA journal_mode = WAL")
     return conn
@@ -474,8 +475,23 @@ def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
     _seed_defaults(conn)
+    _populate_fts(conn)
     conn.commit()
     conn.close()
+
+def _populate_fts(conn):
+    """ملء فهرس FTS بالبيانات الحالية (عند أول تشغيل أو بعد migration)"""
+    try:
+        count = conn.execute("SELECT COUNT(*) as c FROM corr_fts").fetchone()['c']
+        if count == 0:
+            conn.execute("""
+                INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
+                SELECT id, ref_num, COALESCE(subject,''), COALESCE(body,''),
+                       COALESCE(party,''), COALESCE(action_required,'')
+                FROM correspondence WHERE is_deleted=0
+            """)
+    except Exception as e:
+        pass  # FTS قد لا يكون متاحاً في بعض بيئات SQLite
 
 def _seed_defaults(conn):
     from werkzeug.security import generate_password_hash
@@ -602,33 +618,3 @@ def _seed_defaults(conn):
                  category,priority,status,reply_status,date,created_by,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (*c, now()))
-
--- ─────────────────────────────────────────
---  Full-Text Search (FTS5)
--- ─────────────────────────────────────────
-CREATE VIRTUAL TABLE IF NOT EXISTS corr_fts USING fts5(
-    correspondence_id UNINDEXED,
-    ref_num,
-    subject,
-    body,
-    party,
-    action_required,
-    content='correspondence',
-    content_rowid='rowid'
-);
-
--- Triggers to keep FTS in sync
-CREATE TRIGGER IF NOT EXISTS corr_fts_insert AFTER INSERT ON correspondence BEGIN
-    INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
-    VALUES (new.id, new.ref_num, new.subject, new.body, new.party, new.action_required);
-END;
-
-CREATE TRIGGER IF NOT EXISTS corr_fts_update AFTER UPDATE ON correspondence BEGIN
-    DELETE FROM corr_fts WHERE correspondence_id = old.id;
-    INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
-    VALUES (new.id, new.ref_num, new.subject, new.body, new.party, new.action_required);
-END;
-
-CREATE TRIGGER IF NOT EXISTS corr_fts_delete AFTER DELETE ON correspondence BEGIN
-    DELETE FROM corr_fts WHERE correspondence_id = old.id;
-END;
