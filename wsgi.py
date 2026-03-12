@@ -1,4 +1,4 @@
-import os, sys, shutil
+import os, sys, shutil, traceback
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
@@ -6,7 +6,6 @@ sys.path.insert(0, BASE)
 def organize_files():
     for d in ['templates','fonts','static/icons','translations','static','instance','instance/uploads']:
         os.makedirs(os.path.join(BASE, d), exist_ok=True)
-
     for f in os.listdir(BASE):
         fp = os.path.join(BASE, f)
         if not os.path.isfile(fp): continue
@@ -19,26 +18,30 @@ def organize_files():
         elif f.startswith('icon-') and f.endswith('.png'):
             dst = os.path.join(BASE, 'static', 'icons', f)
             if not os.path.exists(dst): shutil.copy2(fp, dst)
-
-    for f in ['ar.json', 'en.json']:
-        src = os.path.join(BASE, f)
+    for fname in ['ar.json', 'en.json']:
+        src = os.path.join(BASE, fname)
         if os.path.exists(src):
-            dst = os.path.join(BASE, 'translations', f)
+            dst = os.path.join(BASE, 'translations', fname)
             if not os.path.exists(dst): shutil.copy2(src, dst)
-
-    for f in ['manifest.json', 'sw.js']:
-        src = os.path.join(BASE, f)
+    for fname in ['manifest.json', 'sw.js']:
+        src = os.path.join(BASE, fname)
         if os.path.exists(src):
-            dst = os.path.join(BASE, 'static', f)
+            dst = os.path.join(BASE, 'static', fname)
             if not os.path.exists(dst): shutil.copy2(src, dst)
-
     print("Files organized")
 
-organize_files()
-print("Database ready")
+try:
+    organize_files()
+except Exception as e:
+    print(f"organize error: {e}")
 
-# Import app — main.py handles init_db internally on startup
-from main import app
+try:
+    from main import app
+    print("App loaded OK")
+except Exception as e:
+    print(f"FATAL IMPORT ERROR: {e}")
+    traceback.print_exc()
+    raise
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
