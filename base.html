@@ -482,6 +482,17 @@ textarea.form-control{min-height:120px;resize:vertical}
       {% set wf_count = pending_wf %}
       {% if wf_count %}<span class="sb-badge warn">{{ wf_count }}</span>{% endif %}
     </a>
+    <a href="{{ url_for('advanced_search') }}" class="sb-link {% if request.endpoint=='advanced_search' %}active{% endif %}">
+      <span class="sb-icon">🔎</span> بحث متقدم
+    </a>
+    {% if is_manager %}
+    <a href="{{ url_for('templates_list') }}" class="sb-link {% if request.endpoint in ('templates_list','template_new','template_edit') %}active{% endif %}">
+      <span class="sb-icon">📋</span> قوالب الخطابات
+    </a>
+    <a href="{{ url_for('executive_dashboard') }}" class="sb-link {% if request.endpoint=='executive_dashboard' %}active{% endif %}">
+      <span class="sb-icon">📊</span> داشبورد تنفيذي
+    </a>
+    {% endif %}
     {% if is_admin %}
     <a href="{{ url_for('audit_log_view') }}" class="sb-link {% if request.endpoint=='audit_log_view' %}active{% endif %}">
       <span class="sb-icon">🔍</span> سجل التدقيق
