@@ -77,6 +77,16 @@ def manager_required(f):
 
 # ── Context processor ─────────────────────────────────
 @app.context_processor
+
+def super_admin_required(f):
+    @wraps(f)
+    def d(*a,**k):
+        if 'user_id' not in session: return redirect(url_for('login'))
+        if session.get('role') != 'super_admin':
+            flash('هذه الصفحة متاحة لمالك النظام فقط','error')
+            return redirect(url_for('dashboard'))
+        return f(*a,**k)
+    return d
 def inject_globals():
     if 'user_id' not in session:
         return {'current_user':{},'is_admin':False,'is_manager':False,
@@ -879,7 +889,7 @@ def delete_project(pid):
 #  CONTACTS (جهات الاتصال)
 # ══════════════════════════════════════════════════════
 @app.route('/contacts')
-@login_required
+@manager_required
 def contacts():
     conn = get_db()
     cid  = session['company_id']
@@ -961,7 +971,7 @@ def edit_contact(ctid):
 #  REPORTS & ANALYTICS
 # ══════════════════════════════════════════════════════
 @app.route('/reports')
-@login_required
+@manager_required
 def reports():
     conn = get_db()
     cid  = session['company_id']
@@ -1038,7 +1048,7 @@ def reports():
         compliant=compliant, overdue=overdue)
 
 @app.route('/reports/export/excel')
-@login_required
+@admin_required
 def export_excel():
     conn = get_db()
     cid  = session['company_id']
@@ -1293,7 +1303,7 @@ def send_manual_notification():
 # ══════════════════════════════════════════════════════
 
 @app.route('/reports/advanced')
-@login_required
+@manager_required
 def advanced_reports():
     conn = get_db()
     cid  = session['company_id']
@@ -1633,7 +1643,7 @@ def generate_api_key():
 
 # ─── Multi-tenant Admin ───────────────────────────────
 @app.route('/super-admin')
-@login_required
+@super_admin_required
 def super_admin():
     # Only super admin (first user ever created, id=1 or role=super_admin)
     conn = get_db()
