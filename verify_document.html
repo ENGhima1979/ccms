@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}التحقق من المستند{% endblock %}
+{% block content %}
+<div style="max-width:500px;margin:60px auto;text-align:center">
+  <div style="font-size:48px;margin-bottom:16px">{{ '✅' if found else '❌' }}</div>
+  <h2 style="color:{{ 'var(--mint)' if found else 'var(--danger)' }}">
+    {{ 'مستند موثَّق ومعتمد' if found else 'المستند غير موجود' }}
+  </h2>
+  <div style="background:var(--card2);border:1px solid var(--border);border-radius:var(--r);padding:24px;margin-top:20px;text-align:right">
+    {% if found %}
+    <div style="display:grid;gap:10px">
+      <div><span style="color:var(--text3)">الشركة:</span> <strong>{{ found.company }}</strong></div>
+      <div><span style="color:var(--text3)">رقم المراسلة:</span> <strong>{{ found.corr.ref_num }}</strong></div>
+      <div><span style="color:var(--text3)">الموضوع:</span> {{ found.corr.subject }}</div>
+      <div><span style="color:var(--text3)">التاريخ:</span> {{ found.corr.date }}</div>
+      <div style="margin-top:8px;padding:10px;background:rgba(6,255,165,.1);border-radius:8px;font-family:monospace;font-size:12px;color:var(--mint)">
+        Hash: {{ hash }}
+      </div>
+    </div>
+    {% else %}
+    <p style="color:var(--text3)">لم يتم العثور على مستند بهذا الرمز في قاعدة البيانات.</p>
+    <p style="font-family:monospace;font-size:12px;color:var(--danger)">{{ hash }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

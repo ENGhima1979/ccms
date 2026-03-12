@@ -1,0 +1,122 @@
+{% extends 'base.html' %}
+{% block title %}سجل التدقيق{% endblock %}
+{% block page_title %}🔍 سجل التدقيق — Audit Trail{% endblock %}
+{% block page_sub %}كل إجراء في النظام موثَّق: من فعل، ماذا، متى، من أين{% endblock %}
+{% block content %}
+
+<!-- فلاتر البحث -->
+<div class="card mb-4">
+  <div class="card-body" style="padding:16px">
+    <form method="GET" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div style="flex:1;min-width:160px">
+        <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">المستخدم</label>
+        <select name="user_id" class="form-control">
+          <option value="">الكل</option>
+          {% for u in users %}
+          <option value="{{ u.id }}" {% if filters.user_id==u.id %}selected{% endif %}>{{ u.full_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;min-width:160px">
+        <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">نوع الإجراء</label>
+        <select name="action" class="form-control">
+          <option value="">الكل</option>
+          {% for code, label in AUDIT_ACTIONS.items() %}
+          <option value="{{ code }}" {% if filters.action==code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;min-width:140px">
+        <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">نوع الكيان</label>
+        <select name="entity" class="form-control">
+          <option value="">الكل</option>
+          <option value="correspondence" {% if filters.entity=='correspondence' %}selected{% endif %}>مراسلة</option>
+          <option value="user" {% if filters.entity=='user' %}selected{% endif %}>مستخدم</option>
+          <option value="project" {% if filters.entity=='project' %}selected{% endif %}>مشروع</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-electric">🔍 بحث</button>
+      <a href="{{ url_for('audit_log_view') }}" class="btn btn-ghost">إعادة ضبط</a>
+    </form>
+  </div>
+</div>
+
+<!-- الإحصاء -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <span style="color:var(--text3);font-size:13px">إجمالي السجلات: <strong style="color:var(--sky)">{{ total }}</strong></span>
+  <span style="color:var(--text3);font-size:12px">صفحة {{ page }} من {{ ((total-1)//per + 1) if total > 0 else 1 }}</span>
+</div>
+
+<!-- جدول السجل -->
+<div class="card">
+  <div class="table-wrap">
+    <table class="table" style="font-size:13px">
+      <thead><tr>
+        <th>التوقيت</th><th>المستخدم</th><th>الإجراء</th>
+        <th>الكيان</th><th>التفاصيل</th><th>IP</th>
+      </tr></thead>
+      <tbody>
+      {% for log in logs %}
+      <tr>
+        <td style="white-space:nowrap;color:var(--text3);font-size:11px">
+          {{ log.created_at[:16].replace('T',' ') }}
+        </td>
+        <td>
+          <div style="font-weight:600">{{ log.full_name or log.username or 'النظام' }}</div>
+          <div style="font-size:11px;color:var(--text3)">{{ log.username }}</div>
+        </td>
+        <td>
+          {% set action_colors = {
+            'CORR_CREATE':'var(--mint)', 'CORR_EDIT':'var(--sky)',
+            'CORR_DELETE':'var(--danger)', 'USER_LOGIN':'var(--gold)',
+            'WF_APPROVE':'var(--mint)', 'WF_REJECT':'var(--danger)',
+            'WF_RETURN':'var(--warn)', 'CORR_EXPORT':'var(--sky)',
+            'PERM_GRANT':'var(--mint)', 'PERM_REVOKE':'var(--warn)'
+          } %}
+          <span class="badge" style="background:rgba(0,0,0,.2);color:{{ action_colors.get(log.action,'var(--text2)') }}">
+            {{ AUDIT_ACTIONS.get(log.action, log.action) }}
+          </span>
+        </td>
+        <td>
+          {% if log.entity == 'correspondence' and log.entity_id %}
+          <a href="{{ url_for('view_correspondence', cid=log.entity_id) }}" style="color:var(--sky);font-size:12px">
+            مراسلة
+          </a>
+          {% else %}
+          <span style="color:var(--text3);font-size:12px">{{ log.entity or '—' }}</span>
+          {% endif %}
+        </td>
+        <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--text3)">
+          {{ log.new_value or log.old_value or '—' }}
+        </td>
+        <td style="font-size:11px;color:var(--text3);font-family:monospace">
+          {{ log.ip_address or '—' }}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="text-center py-4 text-muted">لا توجد سجلات</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Pagination -->
+{% if total > per %}
+<div style="display:flex;justify-content:center;gap:8px;margin-top:20px">
+  {% if page > 1 %}
+  <a href="?page={{ page-1 }}&user_id={{ filters.user_id }}&action={{ filters.action }}&entity={{ filters.entity }}" class="btn btn-outline btn-sm">← السابق</a>
+  {% endif %}
+  {% for p in range(1, (total//per)+2) %}
+  {% if p <= 10 %}
+  <a href="?page={{ p }}&user_id={{ filters.user_id }}&action={{ filters.action }}&entity={{ filters.entity }}"
+     class="btn btn-sm {{ 'btn-electric' if p==page else 'btn-ghost' }}">{{ p }}</a>
+  {% endif %}
+  {% endfor %}
+  {% if page * per < total %}
+  <a href="?page={{ page+1 }}&user_id={{ filters.user_id }}&action={{ filters.action }}&entity={{ filters.entity }}" class="btn btn-outline btn-sm">التالي →</a>
+  {% endif %}
+</div>
+{% endif %}
+
+{% endblock %}
