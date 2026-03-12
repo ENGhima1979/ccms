@@ -27,6 +27,37 @@ from models import get_db, init_db, now, today, new_id
 from i18n import init_i18n, t
 from api import api as api_blueprint, generate_api_key_for_user, get_user_api_key
 from ai_engine import analyze_correspondence, get_ai_stats
+try:
+    from ocr_engine import extract_text_from_file, save_ocr_result, get_ocr_result
+except ImportError:
+    def extract_text_from_file(*a,**k): return {"text":"","confidence":0,"engine":"none"}
+    def save_ocr_result(*a,**k): pass
+    def get_ocr_result(*a,**k): return []
+
+try:
+    from report_builder import (run_report, export_excel, export_pdf, get_chart_data,
+                                 save_report, get_saved_reports, AVAILABLE_FIELDS)
+except ImportError:
+    AVAILABLE_FIELDS = []
+    def run_report(*a,**k): return {"columns":[],"field_labels":{},"data":[],"total":0}
+    def export_excel(*a,**k): return b""
+    def export_pdf(*a,**k): return b""
+    def get_chart_data(*a,**k): return {}
+    def save_report(*a,**k): return ""
+    def get_saved_reports(*a,**k): return []
+
+try:
+    from integration_gateway import (SERVICES, execute_integration, test_connection,
+                                      save_integration_config, get_all_integrations,
+                                      get_integration_logs, get_integration_config)
+except ImportError:
+    SERVICES = {}
+    def execute_integration(*a,**k): return {"success":False,"error":"module not found"}
+    def test_connection(*a,**k): return {"success":False}
+    def save_integration_config(*a,**k): pass
+    def get_all_integrations(*a,**k): return []
+    def get_integration_logs(*a,**k): return []
+    def get_integration_config(*a,**k): return {}
 from notifier import (get_company_notification_settings, notify_new_correspondence,
                       notify_due_soon, build_email_html, notify)
 from helpers import (get_user_project_ids, get_visible_projects,
@@ -2098,6 +2129,245 @@ def scheduler_run_now(job_id):
     return jsonify({'error':'job not found'}),404
 
 
+
+
+
+# ======================================================
+#  OCR -- قراءة المرفقات تلقائياً
+# ======================================================
+
+@app.route('/correspondence/<cid>/ocr', methods=['POST'])
+@login_required
+def run_ocr(cid):
+    conn     = get_db()
+    company  = session['company_id']
+    api_key  = conn.execute(
+        "SELECT ai_api_key FROM companies WHERE id=?", (company,)
+    ).fetchone()
+    api_key  = (api_key['ai_api_key'] if api_key else None) or                app.config.get('ANTHROPIC_API_KEY', os.environ.get('ANTHROPIC_API_KEY',''))
+
+    atts = conn.execute(
+        "SELECT * FROM attachments WHERE correspondence_id=?", (cid,)
+    ).fetchall()
+
+    if not atts:
+        conn.close()
+        return jsonify({'error': 'لا توجد مرفقات'}), 400
+
+    results = []
+    for att in atts:
+        fpath = os.path.join(
+            app.root_path, 'instance', 'uploads', att['filename']
+        )
+        if not os.path.exists(fpath):
+            continue
+        result = extract_text_from_file(fpath, api_key)
+        save_ocr_result(conn, cid, att['id'], company, result)
+        results.append({
+            'filename': att['original_name'],
+            'text':     result.get('text','')[:500],
+            'engine':   result.get('engine'),
+            'confidence': result.get('confidence', 0),
+            'pages':    result.get('pages', 1)
+        })
+
+    log_audit(conn, 'CORR_EDIT', 'correspondence', cid, new_value='ocr_run')
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'results': results,
+                    'total': len(results)})
+
+
+@app.route('/correspondence/<cid>/ocr/results')
+@login_required
+def get_ocr_results(cid):
+    conn    = get_db()
+    results = get_ocr_result(conn, cid)
+    conn.close()
+    return jsonify([dict(r) for r in results])
+
+
+# ======================================================
+#  REPORT BUILDER -- منشئ التقارير المخصصة
+# ======================================================
+
+@app.route('/reports/builder')
+@login_required
+def report_builder_page():
+    conn    = get_db()
+    saved   = get_saved_reports(conn, session['company_id'])
+    conn.close()
+    return render_template('report_builder.html',
+                           fields=AVAILABLE_FIELDS,
+                           saved_reports=[dict(r) for r in saved])
+
+
+@app.route('/reports/builder/run', methods=['POST'])
+@login_required
+def report_run():
+    conn   = get_db()
+    config = request.json or {}
+    result = run_report(conn, session['company_id'], config)
+    chart  = get_chart_data(result)
+    conn.close()
+    return jsonify({'result': result, 'chart': chart})
+
+
+@app.route('/reports/builder/export/<fmt>', methods=['POST'])
+@login_required
+def report_export(fmt):
+    conn    = get_db()
+    config  = request.json or {}
+    result  = run_report(conn, session['company_id'], config)
+    company = conn.execute("SELECT name FROM companies WHERE id=?",
+                           (session['company_id'],)).fetchone()
+    co_name = company['name'] if company else ''
+    rpt_name= config.get('report_name', 'تقرير مخصص')
+    conn.close()
+
+    if fmt == 'excel':
+        data = export_excel(result, rpt_name)
+        return send_file(io.BytesIO(data), as_attachment=True,
+                         download_name=f"{rpt_name}.xlsx",
+                         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    elif fmt == 'pdf':
+        data = export_pdf(result, rpt_name, co_name)
+        return send_file(io.BytesIO(data), as_attachment=False,
+                         download_name=f"{rpt_name}.pdf",
+                         mimetype='application/pdf')
+    return jsonify({'error': 'format not supported'}), 400
+
+
+@app.route('/reports/builder/save', methods=['POST'])
+@login_required
+def report_save():
+    conn = get_db()
+    d    = request.json or {}
+    rid  = save_report(
+        conn,
+        company_id      = session['company_id'],
+        user_id         = session['user_id'],
+        name            = d.get('name','تقرير بدون اسم'),
+        description     = d.get('description',''),
+        config          = d.get('config',{}),
+        schedule_cron   = d.get('schedule_cron',''),
+        schedule_emails = d.get('schedule_emails','')
+    )
+    conn.commit(); conn.close()
+    return jsonify({'success': True, 'id': rid})
+
+
+@app.route('/reports/builder/saved')
+@login_required
+def report_saved_list():
+    conn   = get_db()
+    saved  = get_saved_reports(conn, session['company_id'])
+    conn.close()
+    return jsonify([dict(r) for r in saved])
+
+
+@app.route('/reports/builder/saved/<rid>/run')
+@login_required
+def report_run_saved(rid):
+    conn   = get_db()
+    row    = conn.execute(
+        "SELECT * FROM saved_reports WHERE id=? AND company_id=?",
+        (rid, session['company_id'])
+    ).fetchone()
+    if not row:
+        conn.close(); return jsonify({'error':'not found'}),404
+    config = json.loads(row['config_json'])
+    result = run_report(conn, session['company_id'], config)
+    chart  = get_chart_data(result)
+    # تحديث last_run
+    conn.execute("UPDATE saved_reports SET last_run=? WHERE id=?", (now(),rid))
+    conn.commit(); conn.close()
+    return jsonify({'result': result, 'chart': chart, 'report_name': row['name']})
+
+
+@app.route('/reports/builder/saved/<rid>/delete', methods=['POST'])
+@manager_required
+def report_delete_saved(rid):
+    conn = get_db()
+    conn.execute("UPDATE saved_reports SET is_active=0 WHERE id=? AND company_id=?",
+                 (rid, session['company_id']))
+    conn.commit(); conn.close()
+    return jsonify({'success': True})
+
+
+# ======================================================
+#  INTEGRATION GATEWAY -- بوابة التكامل
+# ======================================================
+
+@app.route('/integrations')
+@manager_required
+def integrations_page():
+    conn  = get_db()
+    items = get_all_integrations(conn, session['company_id'])
+    conn.close()
+    return render_template('integrations.html', integrations=items, services=SERVICES)
+
+
+@app.route('/integrations/<service>/config', methods=['GET','POST'])
+@manager_required
+def integration_config(service):
+    if service not in SERVICES:
+        flash('خدمة غير موجودة','error')
+        return redirect(url_for('integrations_page'))
+
+    conn = get_db()
+    svc  = SERVICES[service]
+    cfg  = get_integration_config(conn, session['company_id'], service)
+
+    if request.method == 'POST':
+        config = {}
+        for field in svc.get('requires', []):
+            config[field] = request.form.get(field,'').strip()
+        config['base_url'] = request.form.get('base_url', svc.get('base_url',''))
+        is_active = request.form.get('is_active') == '1'
+        save_integration_config(conn, session['company_id'], service,
+                                config, is_active)
+        conn.commit(); conn.close()
+        flash(f'✅ تم حفظ إعدادات {svc["name_ar"]}','success')
+        return redirect(url_for('integrations_page'))
+
+    conn.close()
+    return render_template('integration_config.html',
+                           service=service, svc=svc, cfg=cfg)
+
+
+@app.route('/integrations/<service>/test', methods=['POST'])
+@manager_required
+def integration_test(service):
+    conn   = get_db()
+    result = test_connection(conn, session['company_id'], service)
+    conn.commit(); conn.close()
+    return jsonify(result)
+
+
+@app.route('/integrations/<service>/execute', methods=['POST'])
+@login_required
+def integration_execute(service):
+    conn = get_db()
+    d    = request.json or {}
+    action = d.get('action','verify_id')
+    data   = d.get('data',{})
+    sim    = d.get('simulation', True)
+    result = execute_integration(conn, session['company_id'],
+                                  service, action, data, sim)
+    conn.commit(); conn.close()
+    return jsonify(result)
+
+
+@app.route('/integrations/<service>/logs')
+@manager_required
+def integration_logs_page(service):
+    conn  = get_db()
+    logs  = get_integration_logs(conn, session['company_id'], service, limit=100)
+    svc   = SERVICES.get(service, {})
+    conn.close()
+    return render_template('integration_logs.html',
+                           logs=logs, service=service, svc=svc)
 
 
 # ======================================================
