@@ -1977,6 +1977,27 @@ def _send_subscription_email(co, sub):
             s.login(smtp_user, smtp_pass)
             s.send_message(msg)
 
+
+@app.route('/settings/workflow/<wf_id>/delete', methods=['POST'])
+@admin_required
+def delete_workflow(wf_id):
+    conn = get_db()
+    conn.execute("DELETE FROM workflow_definitions WHERE id=? AND company_id=?", (wf_id, session['company_id']))
+    conn.commit(); conn.close()
+    flash('تم حذف سير العمل', 'info')
+    return redirect(url_for('settings') + '#workflow')
+
+@app.route('/settings/workflow/<wf_id>/set-default', methods=['POST'])
+@admin_required
+def set_default_workflow(wf_id):
+    conn = get_db()
+    cid = session['company_id']
+    conn.execute("UPDATE workflow_definitions SET is_default=0 WHERE company_id=?", (cid,))
+    conn.execute("UPDATE workflow_definitions SET is_default=1 WHERE id=? AND company_id=?", (wf_id, cid))
+    conn.commit(); conn.close()
+    flash('✅ تم تعيين سير العمل الافتراضي', 'success')
+    return redirect(url_for('settings') + '#workflow')
+
 @app.route('/super-admin/check-subscriptions')
 @admin_required
 def check_subscriptions():
