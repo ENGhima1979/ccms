@@ -449,7 +449,7 @@ textarea.form-control{min-height:120px;resize:vertical}
        user        → مراسلات + مشاريع + أرشيف فقط
     ═══════════════════════════════════════════ #}
     {% set role = session.get('role','user') %}
-    {% set is_super = role == 'super_admin' %}
+    {% set is_super = role in ('super_admin','admin') %}
     {% set is_admin = role in ('super_admin','admin') %}
     {% set is_manager = role in ('super_admin','admin','manager') %}
 
