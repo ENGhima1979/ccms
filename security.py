@@ -340,3 +340,142 @@ def verify_document_hash(corr_id, ref_num, subject, company_id, provided_hash):
     """التحقق من صحة الختم الرقمي"""
     expected = generate_document_hash(corr_id, ref_num, subject, company_id)
     return expected == provided_hash.upper()
+
+
+# ══════════════════════════════════════════════════════
+#  DIGITAL SIGNATURE — التوقيع الرقمي الكامل
+# ══════════════════════════════════════════════════════
+
+def save_user_signature(conn, user_id, company_id, sig_data, sig_type='drawn'):
+    """حفظ توقيع المستخدم"""
+    import uuid, datetime
+    # حذف القديم أولاً
+    conn.execute("DELETE FROM user_signatures WHERE user_id=? AND company_id=?", (user_id, company_id))
+    conn.execute("""
+        INSERT INTO user_signatures (id, user_id, company_id, sig_data, sig_type, is_active, created_at)
+        VALUES (?,?,?,?,?,1,?)
+    """, (str(uuid.uuid4()), user_id, company_id, sig_data, sig_type,
+          datetime.datetime.now().isoformat(timespec='seconds')))
+
+
+def get_user_signature(conn, user_id, company_id):
+    """جلب توقيع المستخدم الفعّال"""
+    row = conn.execute("""
+        SELECT sig_data FROM user_signatures
+        WHERE user_id=? AND company_id=? AND is_active=1
+    """, (user_id, company_id)).fetchone()
+    return row['sig_data'] if row else None
+
+
+def apply_signature_to_pdf(pdf_bytes, sig_data_b64, signer_name,
+                            signer_title='', sign_date='', position='bottom-right'):
+    """
+    إضافة توقيع خطي + بيانات الموقّع على PDF
+    ────────────────────────────────────────────
+    sig_data_b64 : صورة التوقيع بـ base64 (PNG من Canvas)
+    position     : bottom-right | bottom-left | bottom-center
+    """
+    try:
+        import base64, io as _io
+        from reportlab.pdfgen import canvas as rl_canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.units import mm
+        from reportlab.lib.colors import HexColor
+
+        if not sign_date:
+            sign_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M')
+
+        w, h = A4
+        sig_buffer = _io.BytesIO()
+        c = rl_canvas.Canvas(sig_buffer, pagesize=A4)
+
+        # ── حدد موقع التوقيع ──
+        box_w, box_h = 70*mm, 28*mm
+        margin = 12*mm
+        if position == 'bottom-right':
+            x = w - box_w - margin
+        elif position == 'bottom-left':
+            x = margin
+        else:
+            x = (w - box_w) / 2
+        y = margin
+
+        # ── خلفية الختم ──
+        c.setFillColor(HexColor('#f8f9ff'))
+        c.setStrokeColor(HexColor('#1a237e'))
+        c.setLineWidth(1)
+        c.roundRect(x, y, box_w, box_h, 2*mm, fill=1, stroke=1)
+
+        # ── صورة التوقيع ──
+        try:
+            # إزالة header من base64
+            if ',' in sig_data_b64:
+                sig_data_b64 = sig_data_b64.split(',')[1]
+            sig_bytes = base64.b64decode(sig_data_b64)
+            from reportlab.lib.utils import ImageReader
+            sig_img = ImageReader(_io.BytesIO(sig_bytes))
+            # رسم التوقيع في الجزء العلوي من الصندوق
+            c.drawImage(sig_img, x + 3*mm, y + 10*mm,
+                        width=box_w - 6*mm, height=14*mm,
+                        preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass  # إذا فشلت الصورة، نكمل بالبيانات النصية فقط
+
+        # ── بيانات الموقّع ──
+        c.setFont('Helvetica-Bold', 7)
+        c.setFillColor(HexColor('#1a237e'))
+        c.drawString(x + 3*mm, y + 7.5*mm, signer_name[:35])
+        c.setFont('Helvetica', 6.5)
+        c.setFillColor(HexColor('#444444'))
+        if signer_title:
+            c.drawString(x + 3*mm, y + 4.5*mm, signer_title[:40])
+        c.drawString(x + 3*mm, y + 1.5*mm, sign_date)
+
+        # ── خط فاصل تحت التوقيع ──
+        c.setStrokeColor(HexColor('#1a237e'))
+        c.setLineWidth(0.5)
+        c.line(x + 3*mm, y + 9.5*mm, x + box_w - 3*mm, y + 9.5*mm)
+
+        c.save()
+        sig_layer = sig_buffer.getvalue()
+
+        # ── دمج مع الـ PDF ──
+        try:
+            from pypdf import PdfWriter, PdfReader
+            original = PdfReader(_io.BytesIO(pdf_bytes))
+            overlay  = PdfReader(_io.BytesIO(sig_layer))
+            writer   = PdfWriter()
+            for i, page in enumerate(original.pages):
+                if i == len(original.pages) - 1:
+                    page.merge_page(overlay.pages[0])
+                writer.add_page(page)
+            out = _io.BytesIO()
+            writer.write(out)
+            return out.getvalue()
+        except ImportError:
+            return pdf_bytes
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f'Signature apply failed: {e}')
+        return pdf_bytes
+
+
+def add_stamp_and_signature(pdf_bytes, corr, company, approver_name,
+                             approver_title='', sig_data_b64=None):
+    """
+    يجمع التوقيع الخطي + الختم الرقمي في عملية واحدة
+    ────────────────────────────────────────────────────
+    """
+    result = pdf_bytes
+
+    # 1. أضف التوقيع الخطي (يسار أسفل)
+    if sig_data_b64:
+        result = apply_signature_to_pdf(
+            result, sig_data_b64, approver_name, approver_title,
+            position='bottom-left')
+
+    # 2. أضف الختم الرقمي (يمين أسفل)
+    result = add_digital_stamp_to_pdf(result, corr, company, approver_name)
+
+    return result
