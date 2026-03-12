@@ -131,7 +131,10 @@ def fromjson_sub(v):
 @app.context_processor
 def inject_today():
     import datetime
-    return {'today': datetime.date.today().isoformat()}
+    return {
+        'today': datetime.date.today().isoformat(),
+        'now': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
+    }
 
 @app.template_filter('ar_date')
 def ar_date(v):
@@ -494,18 +497,7 @@ def new_correspondence():
             wf_def = conn.execute("SELECT * FROM workflow_definitions WHERE company_id=? AND is_default=1",
                                   (cid,)).fetchone()
             if wf_def:
-                steps = json.loads(wf_def['steps_json'])
-                for step in steps:
-                    conn.execute("""INSERT INTO workflow_steps
-                        (id,correspondence_id,step_number,step_name,action_type,
-                         assigned_role,status,is_mandatory,created_at)
-                        VALUES (?,?,?,?,?,?,?,?,?)""",
-                        (new_id(),corr_id,step['step'],step['name'],step['action'],
-                         step.get('role','manager'),'pending' if step['step']==1 else 'waiting',
-                         1 if step.get('mandatory') else 0, now()))
-
-                conn.execute("UPDATE correspondence SET workflow_id=?,workflow_status='in_review' WHERE id=?",
-                             (wf_def['id'],corr_id))
+                _create_workflow_steps(conn, corr_id, wf_def, cid, session['user_id'])
 
         # Audit log
         conn.execute("""INSERT INTO audit_log
@@ -671,7 +663,7 @@ def unarchive_correspondence(cid):
 @login_required
 def workflow_action(step_id):
     conn   = get_db()
-    action = request.form.get('action','')  # approve / reject / review
+    action = request.form.get('action','')  # approve / reject / return
     note   = request.form.get('note','').strip()
 
     step = conn.execute("SELECT * FROM workflow_steps WHERE id=?", (step_id,)).fetchone()
@@ -680,35 +672,182 @@ def workflow_action(step_id):
         return redirect(url_for('dashboard'))
 
     corr_id = step['correspondence_id']
-    new_status = 'approved' if action == 'approve' else ('rejected' if action == 'reject' else 'done')
+    corr    = conn.execute("SELECT * FROM correspondence WHERE id=?", (corr_id,)).fetchone()
 
-    conn.execute("UPDATE workflow_steps SET status=?,completed_at=?,completed_by=?,note=? WHERE id=?",
-                 (new_status, now(), session['user_id'], note, step_id))
+    # ── تحقق أن المستخدم هو المسؤول عن هذه الخطوة ──
+    if step['assigned_to'] and step['assigned_to'] != session['user_id']:
+        # السماح للـ admin بالتصرف نيابةً
+        if session.get('role') not in ('admin','super_admin'):
+            flash('ليس لديك صلاحية للتصرف في هذه الخطوة','error')
+            conn.close()
+            return redirect(url_for('view_correspondence', cid=corr_id))
+
+    # ── تسجيل إجراء الخطوة الحالية ──
+    step_status = 'approved' if action=='approve' else ('rejected' if action=='reject' else 'returned')
+    conn.execute("""UPDATE workflow_steps
+        SET status=?,completed_at=?,completed_by=?,note=? WHERE id=?""",
+        (step_status, now(), session['user_id'], note, step_id))
+
+    # ── تسجيل في Audit Trail ──
+    action_label = {'approve':'اعتمد','reject':'رفض','return':'أعاد للمراجعة'}.get(action,action)
+    conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,entity,entity_id,new_value,created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)""",
+        (new_id(), session['company_id'], session['user_id'],
+         session.get('username',''),
+         f'workflow_{action}', 'correspondence', corr_id,
+         f'{action_label} خطوة: {step["step_name"]} | ملاحظة: {note or "—"}',
+         now()))
 
     if action == 'reject':
-        conn.execute("UPDATE correspondence SET workflow_status='rejected',status='rejected' WHERE id=?", (corr_id,))
+        # ── رفض نهائي: أبلغ المُنشئ ──
+        conn.execute("UPDATE correspondence SET workflow_status='rejected',status='draft' WHERE id=?", (corr_id,))
+        conn.execute("UPDATE workflow_steps SET status='cancelled' WHERE correspondence_id=? AND status='waiting'", (corr_id,))
+        create_notification(corr['created_by'], 'workflow',
+            f'❌ تم رفض مراسلتك: {corr["ref_num"]}',
+            f'سبب الرفض: {note or "لم يُذكر"}',
+            url_for('view_correspondence', cid=corr_id), conn)
+        flash('تم رفض المراسلة وإشعار المُنشئ','warning')
+
+    elif action == 'return':
+        # ── إعادة للخطوة الأولى (المُنشئ) للتعديل ──
+        conn.execute("UPDATE correspondence SET workflow_status='returned',status='draft' WHERE id=?", (corr_id,))
+        conn.execute("UPDATE workflow_steps SET status='cancelled' WHERE correspondence_id=? AND status='waiting'", (corr_id,))
+        create_notification(corr['created_by'], 'workflow',
+            f'↩️ مراسلتك تحتاج تعديل: {corr["ref_num"]}',
+            f'ملاحظة المراجع: {note or "يرجى المراجعة والتعديل"}',
+            url_for('view_correspondence', cid=corr_id), conn)
+        flash('تم إرجاع المراسلة للمُنشئ للتعديل','info')
+
     else:
-        # Move to next step
+        # ── موافقة: انتقل للخطوة التالية ──
         next_step = conn.execute("""SELECT * FROM workflow_steps
-                                    WHERE correspondence_id=? AND step_number>? AND status='waiting'
-                                    ORDER BY step_number LIMIT 1""",
-                                 (corr_id, step['step_number'])).fetchone()
+            WHERE correspondence_id=? AND step_number>? AND status='waiting'
+            ORDER BY step_number LIMIT 1""",
+            (corr_id, step['step_number'])).fetchone()
+
         if next_step:
-            conn.execute("UPDATE workflow_steps SET status='pending' WHERE id=?", (next_step['id'],))
-            # Notify assignee
+            # تفعيل الخطوة التالية وإشعار المسؤول
+            conn.execute("UPDATE workflow_steps SET status='pending',due_date=? WHERE id=?",
+                (_calc_due_date(48), next_step['id']))
             if next_step['assigned_to']:
-                corr = conn.execute("SELECT ref_num,subject FROM correspondence WHERE id=?", (corr_id,)).fetchone()
                 create_notification(next_step['assigned_to'], 'workflow',
-                    f"طلب مراجعة: {corr['ref_num']}",
-                    f"يتطلب موافقتك: {corr['subject']}",
+                    f'🔔 يتطلب موافقتك: {corr["ref_num"]}',
+                    f'الخطوة: {next_step["step_name"]} | {corr["subject"]}',
                     url_for('view_correspondence', cid=corr_id), conn)
+            flash(f'✅ تمت الموافقة — انتقل إلى: {next_step["step_name"]}','success')
         else:
-            # All steps done
-            conn.execute("UPDATE correspondence SET workflow_status='approved',status='approved' WHERE id=?", (corr_id,))
+            # ── كل الخطوات اكتملت: اعتماد نهائي ──
+            conn.execute("""UPDATE correspondence SET
+                workflow_status='approved', status='approved',
+                updated_at=? WHERE id=?""", (now(), corr_id))
+            # إشعار المُنشئ بالاعتماد النهائي
+            create_notification(corr['created_by'], 'workflow',
+                f'✅ اعتُمدت مراسلتك نهائياً: {corr["ref_num"]}',
+                f'تمت الموافقة على: {corr["subject"]}',
+                url_for('view_correspondence', cid=corr_id), conn)
+            flash('✅ اعتُمدت المراسلة نهائياً وأُشعر المُنشئ','success')
 
     conn.commit(); conn.close()
-    flash(f'✅ تم تنفيذ الإجراء بنجاح','success')
     return redirect(url_for('view_correspondence', cid=corr_id))
+
+
+@app.route('/workflow/my-tasks')
+@login_required
+def my_workflow_tasks():
+    """صفحة مهام سير العمل المنتظرة للمستخدم الحالي"""
+    conn = get_db()
+    uid  = session['user_id']
+    cid  = session['company_id']
+
+    # مهام منتظرة
+    pending = conn.execute("""
+        SELECT ws.*, c.ref_num, c.subject, c.priority, c.date,
+               u.full_name as creator_name, p.name as project_name
+        FROM workflow_steps ws
+        JOIN correspondence c ON ws.correspondence_id = c.id
+        LEFT JOIN users u ON c.created_by = u.id
+        LEFT JOIN projects p ON c.project_id = p.id
+        WHERE ws.assigned_to=? AND ws.status='pending'
+        AND c.company_id=? AND c.is_deleted=0
+        ORDER BY ws.due_date ASC, c.priority DESC""",
+        (uid, cid)).fetchall()
+
+    # مهام أكملتها مؤخراً (آخر 30 يوم)
+    completed = conn.execute("""
+        SELECT ws.*, c.ref_num, c.subject, u.full_name as creator_name
+        FROM workflow_steps ws
+        JOIN correspondence c ON ws.correspondence_id = c.id
+        LEFT JOIN users u ON c.created_by = u.id
+        WHERE ws.completed_by=? AND ws.status IN ('approved','rejected','returned')
+        AND c.company_id=? AND ws.completed_at >= date('now','-30 days')
+        ORDER BY ws.completed_at DESC LIMIT 20""",
+        (uid, cid)).fetchall()
+
+    conn.close()
+    return render_template('workflow_tasks.html',
+                           pending=pending, completed=completed)
+
+
+def _calc_due_date(hours=48):
+    """احسب تاريخ الاستحقاق بعد X ساعة"""
+    import datetime
+    return (datetime.datetime.now() + datetime.timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M')
+
+
+def _create_workflow_steps(conn, corr_id, wf_def, company_id, creator_id):
+    """إنشاء خطوات سير العمل مع تعيين المستخدمين تلقائياً حسب الدور"""
+    steps = json.loads(wf_def['steps_json']) if wf_def['steps_json'] else []
+    if not steps:
+        return
+
+    # جلب مستخدمي الشركة مرتبين حسب الدور
+    users_by_role = {}
+    all_users = conn.execute("""SELECT id, role FROM users
+        WHERE company_id=? AND is_active=1 ORDER BY created_at""",
+        (company_id,)).fetchall()
+    for u in all_users:
+        role = u['role']
+        if role not in users_by_role:
+            users_by_role[role] = []
+        users_by_role[role].append(u['id'])
+
+    def pick_user(role):
+        """اختر مستخدم مناسب للدور — تجنب تعيين المُنشئ لنفسه في مرحلة المراجعة"""
+        candidates = users_by_role.get(role, [])
+        if not candidates:
+            # fallback: أي admin
+            candidates = users_by_role.get('admin', []) or users_by_role.get('super_admin', [])
+        for uid in candidates:
+            if uid != creator_id:
+                return uid
+        return candidates[0] if candidates else None
+
+    for i, step in enumerate(steps):
+        role     = step.get('role', 'manager')
+        assigned = creator_id if i == 0 else pick_user(role)
+        status   = 'pending' if i == 0 else 'waiting'
+        due      = _calc_due_date(24) if i == 0 else None
+
+        conn.execute("""INSERT INTO workflow_steps
+            (id,correspondence_id,step_number,step_name,action_type,
+             assigned_to,assigned_role,status,due_date,is_mandatory,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,1,?)""",
+            (new_id(), corr_id, step['step'], step['name'],
+             step.get('action','review'), assigned, role,
+             status, due, now()))
+
+        # إشعار المسؤول عن الخطوة الأولى
+        if i == 0 and assigned and assigned != creator_id:
+            from helpers import create_notification
+            corr = conn.execute("SELECT ref_num,subject FROM correspondence WHERE id=?", (corr_id,)).fetchone()
+            if corr:
+                create_notification(assigned, 'workflow',
+                    f'🔔 يتطلب مراجعتك: {corr["ref_num"]}',
+                    f'{step["name"]}: {corr["subject"]}',
+                    url_for('view_correspondence', cid=corr_id), conn)
+
+    conn.execute("UPDATE correspondence SET workflow_id=?,workflow_status='in_review' WHERE id=?",
+                 (wf_def['id'], corr_id))
 
 
 # ══════════════════════════════════════════════════════
