@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+{% block title %}مهام سير العمل{% endblock %}
+{% block page_title %}🔄 مهام سير العمل{% endblock %}
+{% block page_sub %}المراسلات المنتظرة لموافقتك{% endblock %}
+{% block content %}
+
+<!-- إحصائيات سريعة -->
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="stat-card" style="border-color:var(--warn)">
+      <div class="stat-icon">⏳</div>
+      <div>
+        <div class="stat-value" style="color:var(--warn)">{{ pending|length }}</div>
+        <div class="stat-label">في انتظار موافقتك</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card" style="border-color:var(--mint)">
+      <div class="stat-icon">✅</div>
+      <div>
+        <div class="stat-value" style="color:var(--mint)">{{ completed|selectattr('status','equalto','approved')|list|length }}</div>
+        <div class="stat-label">اعتمدتها (آخر 30 يوم)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="stat-card" style="border-color:var(--danger)">
+      <div class="stat-icon">↩️</div>
+      <div>
+        <div class="stat-value" style="color:var(--danger)">{{ completed|selectattr('status','in',['rejected','returned'])|list|length }}</div>
+        <div class="stat-label">مرفوضة / مُعادة</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- المهام المنتظرة -->
+<div class="card mb-4">
+  <div class="card-header">
+    <h6 class="mb-0">⏳ مهام تنتظر موافقتك</h6>
+  </div>
+  {% if pending %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>المراسلة</th><th>الخطوة المطلوبة</th><th>الأولوية</th>
+        <th>المُنشئ</th><th>المشروع</th><th>الموعد النهائي</th><th>إجراء</th>
+      </tr></thead>
+      <tbody>
+      {% for t in pending %}
+      <tr class="{% if t.due_date and t.due_date < now() %}table-danger{% endif %}">
+        <td>
+          <a href="{{ url_for('view_correspondence', cid=t.correspondence_id) }}" style="color:var(--sky);font-weight:600">
+            {{ t.ref_num }}
+          </a>
+          <div style="font-size:12px;color:var(--text3)">{{ t.subject[:50] }}{% if t.subject|length > 50 %}...{% endif %}</div>
+        </td>
+        <td>
+          <span class="badge badge-pending">{{ t.step_name }}</span>
+          <div style="font-size:11px;color:var(--text3)">خطوة {{ t.step_number }}</div>
+        </td>
+        <td>
+          {% if t.priority == 'urgent' %}<span class="badge badge-urgent">🔴 عاجل</span>
+          {% elif t.priority == 'high' %}<span class="badge badge-high">🟠 مرتفع</span>
+          {% else %}<span class="badge badge-normal">🟢 عادي</span>{% endif %}
+        </td>
+        <td style="font-size:13px">{{ t.creator_name or '—' }}</td>
+        <td style="font-size:13px">{{ t.project_name or '—' }}</td>
+        <td>
+          {% if t.due_date %}
+            <span style="font-size:12px;color:{% if t.due_date < now() %}var(--danger){% else %}var(--warn){% endif %}">
+              {% if t.due_date < now() %}⚠️ متأخر{% else %}📅 {{ t.due_date[:10] }}{% endif %}
+            </span>
+          {% else %}<span class="text-muted">—</span>{% endif %}
+        </td>
+        <td>
+          <a href="{{ url_for('view_correspondence', cid=t.correspondence_id) }}" class="btn btn-electric btn-sm">
+            مراجعة →
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty" style="padding:40px">
+    <div class="empty-icon">✅</div>
+    <div class="empty-title">لا توجد مهام منتظرة</div>
+    <div class="empty-sub">أنجزت جميع مهامك!</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- المهام المنجزة مؤخراً -->
+{% if completed %}
+<div class="card">
+  <div class="card-header">
+    <h6 class="mb-0">📋 آخر الإجراءات (30 يوم)</h6>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr>
+        <th>المراسلة</th><th>الخطوة</th><th>الإجراء</th><th>الملاحظة</th><th>التاريخ</th>
+      </tr></thead>
+      <tbody>
+      {% for t in completed %}
+      <tr>
+        <td>
+          <a href="{{ url_for('view_correspondence', cid=t.correspondence_id) }}" style="color:var(--sky)">
+            {{ t.ref_num }}
+          </a>
+          <div style="font-size:12px;color:var(--text3)">{{ t.subject[:40] }}...</div>
+        </td>
+        <td style="font-size:13px">{{ t.step_name }}</td>
+        <td>
+          {% if t.status == 'approved' %}<span class="badge badge-active">✅ اعتمد</span>
+          {% elif t.status == 'rejected' %}<span class="badge badge-draft" style="background:rgba(255,107,53,.15);color:var(--danger)">❌ رفض</span>
+          {% elif t.status == 'returned' %}<span class="badge badge-pending">↩️ أعاد</span>
+          {% endif %}
+        </td>
+        <td style="font-size:12px;color:var(--text3)">{{ t.note or '—' }}</td>
+        <td style="font-size:12px;color:var(--text3)">{{ t.completed_at[:10] if t.completed_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
