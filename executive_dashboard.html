@@ -1,0 +1,206 @@
+{% extends 'base.html' %}
+{% block title %}داشبورد تنفيذي{% endblock %}
+{% block page_title %}📊 الداشبورد التنفيذي{% endblock %}
+{% block page_sub %}نظرة شاملة على أداء المراسلات — KPIs حقيقية{% endblock %}
+{% block content %}
+
+<!-- KPIs الرئيسية -->
+<div class="row g-3 mb-4">
+  {% set kpis = [
+    ('إجمالي المراسلات', total, '📨', 'var(--sky)', ''),
+    ('نسبة الإنجاز', completion_rate|string + '%', '✅', 'var(--mint)', ''),
+    ('التزام SLA', sla_rate|string + '%', '⏱️', 'var(--gold)' if sla_rate >= 80 else 'var(--danger)', ''),
+    ('متوسط وقت الرد', avg_reply_hours|string + ' ساعة', '🔄', 'var(--sky)', ''),
+    ('عاجلة', urgent, '🔴', 'var(--danger)', ''),
+    ('في سير العمل', pending_wf, '🔄', 'var(--warn)', ''),
+    ('مسودات', drafts, '📝', 'var(--text3)', ''),
+    ('تجاوزت SLA', overdue_sla, '⚠️', 'var(--danger)', ''),
+  ] %}
+  {% for label, val, icon, color, _ in kpis %}
+  <div class="col-6 col-md-3">
+    <div class="stat-card" style="border-color:{{ color }}">
+      <div class="stat-icon">{{ icon }}</div>
+      <div>
+        <div class="stat-value" style="color:{{ color }}">{{ val }}</div>
+        <div class="stat-label">{{ label }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- مخطط المراسلات الشهري -->
+  <div class="col-md-8">
+    <div class="card h-100">
+      <div class="card-header"><h6 class="mb-0">📈 المراسلات الشهرية — آخر 6 أشهر</h6></div>
+      <div class="card-body" style="padding:16px">
+        <canvas id="monthlyChart" height="100"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- توزيع الأولوية -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header"><h6 class="mb-0">🎯 توزيع الأولوية</h6></div>
+      <div class="card-body" style="padding:16px;display:flex;align-items:center;justify-content:center">
+        <canvas id="priorityChart" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- أداء الأقسام -->
+  <div class="col-md-7">
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">🏢 أداء الأقسام</h6></div>
+      <div class="table-wrap">
+        <table class="table" style="font-size:13px">
+          <thead><tr>
+            <th>القسم</th><th>الإجمالي</th><th>معتمدة</th>
+            <th>معلقة</th><th>متجاوز SLA</th><th>نسبة الإنجاز</th>
+          </tr></thead>
+          <tbody>
+          {% for d in dept_list %}
+          <tr>
+            <td style="font-weight:600">{{ d.name }}</td>
+            <td>{{ d.total }}</td>
+            <td style="color:var(--mint)">{{ d.approved }}</td>
+            <td style="color:var(--warn)">{{ d.pending }}</td>
+            <td style="color:{{ 'var(--danger)' if d.overdue > 0 else 'var(--text3)' }}">
+              {{ d.overdue if d.overdue > 0 else '—' }}
+            </td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="flex:1;background:var(--card2);border-radius:4px;height:6px;overflow:hidden">
+                  <div style="width:{{ d.rate }}%;height:100%;background:{{ 'var(--mint)' if d.rate >= 70 else 'var(--warn)' if d.rate >= 40 else 'var(--danger)' }};transition:width .5s"></div>
+                </div>
+                <span style="min-width:35px;font-size:12px;color:var(--text3)">{{ d.rate }}%</span>
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="text-center text-muted">لا توجد بيانات</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- أكثر المستخدمين نشاطاً -->
+  <div class="col-md-5">
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0">👥 أكثر المستخدمين نشاطاً</h6></div>
+      <div style="padding:12px">
+        {% for name, count in top_users %}
+        {% set max_count = top_users[0][1] if top_users else 1 %}
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:13px">
+            <span>{{ name }}</span>
+            <span style="color:var(--sky);font-weight:600">{{ count }}</span>
+          </div>
+          <div style="background:var(--card2);border-radius:4px;height:5px;overflow:hidden">
+            <div style="width:{{ (count/max_count*100)|int }}%;height:100%;background:var(--sky);transition:width .5s"></div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- توزيع صادر / وارد / داخلي -->
+    <div class="card">
+      <div class="card-header"><h6 class="mb-0">📊 توزيع حسب النوع</h6></div>
+      <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;text-align:center">
+        {% for label, val, color in [('صادر', total_out, 'var(--sky)'), ('وارد', total_in, 'var(--mint)'), ('داخلي', total_internal, 'var(--gold)')] %}
+        <div style="background:var(--card2);border-radius:var(--r);padding:12px">
+          <div style="font-size:20px;font-weight:800;color:{{ color }}">{{ val }}</div>
+          <div style="font-size:11px;color:var(--text3)">{{ label }}</div>
+          <div style="font-size:11px;color:var(--text3)">{{ ((val/total*100)|int) if total > 0 else 0 }}%</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- المراسلات المتجاوزة SLA -->
+{% if overdue_list %}
+<div class="card">
+  <div class="card-header" style="background:rgba(255,107,53,.1)">
+    <h6 class="mb-0" style="color:var(--danger)">🚨 مراسلات تجاوزت SLA (لم يُرد عليها +72 ساعة)</h6>
+  </div>
+  <div class="table-wrap">
+    <table class="table" style="font-size:13px">
+      <thead><tr><th>الرقم</th><th>الموضوع</th><th>الجهة</th><th>تاريخ الورود</th><th>عمر (يوم)</th><th></th></tr></thead>
+      <tbody>
+      {% for r in overdue_list %}
+      {% set age = (today|default('2025-01-01')) %}
+      <tr>
+        <td style="color:var(--danger);font-weight:600">{{ r.ref_num }}</td>
+        <td>{{ r.subject[:50] }}</td>
+        <td>{{ r.party or '—' }}</td>
+        <td>{{ r.date }}</td>
+        <td style="color:var(--danger);font-weight:700">{{ ((now[:10] if now else '2025-01-01') | string) }}</td>
+        <td><a href="{{ url_for('view_correspondence', cid=r.id) }}" class="btn btn-danger btn-sm">عرض</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+const months  = {{ months_data | tojson }};
+const labels  = months.map(m => m.label);
+const outData = months.map(m => m.out);
+const inData  = months.map(m => m.in);
+const intData = months.map(m => m.internal);
+const appData = months.map(m => m.approved);
+
+const chartOpts = {
+  responsive: true,
+  plugins: { legend: { labels: { color: '#b0bec5' } } },
+  scales: {
+    x: { ticks: { color: '#b0bec5' }, grid: { color: 'rgba(255,255,255,.05)' } },
+    y: { ticks: { color: '#b0bec5' }, grid: { color: 'rgba(255,255,255,.05)' }, beginAtZero: true }
+  }
+};
+
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [
+      { label: 'صادر',  data: outData, backgroundColor: 'rgba(0,180,216,.7)',  borderRadius: 4 },
+      { label: 'وارد',  data: inData,  backgroundColor: 'rgba(6,255,165,.7)',  borderRadius: 4 },
+      { label: 'داخلي', data: intData, backgroundColor: 'rgba(255,193,7,.7)',  borderRadius: 4 },
+      { label: 'معتمد', data: appData, backgroundColor: 'rgba(103,58,183,.7)', borderRadius: 4 },
+    ]
+  },
+  options: chartOpts
+});
+
+const pd = {{ priority_dist | tojson }};
+new Chart(document.getElementById('priorityChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['عاجل', 'مرتفع', 'عادي', 'منخفض'],
+    datasets: [{
+      data: [pd.urgent, pd.high, pd.normal, pd.low],
+      backgroundColor: ['#ff6b35','#ffc107','#06ffa5','#546e7a'],
+      borderWidth: 0,
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { position: 'bottom', labels: { color: '#b0bec5', boxWidth: 12 } } },
+    cutout: '65%',
+  }
+});
+</script>
+{% endblock %}
