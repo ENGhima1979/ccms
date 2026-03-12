@@ -441,11 +441,25 @@ textarea.form-control{min-height:120px;resize:vertical}
   </div>
 
   <nav class="sb-nav">
+    {# ═══════════════════════════════════════════
+       نظام القائمة حسب الأدوار:
+       super_admin → كل شيء + إدارة الشركات
+       admin       → كل شيء عدا إدارة الشركات
+       manager     → مراسلات + مشاريع + جهات + تقارير
+       user        → مراسلات + مشاريع + أرشيف فقط
+    ═══════════════════════════════════════════ #}
+    {% set role = session.get('role','user') %}
+    {% set is_super = role == 'super_admin' %}
+    {% set is_admin = role in ('super_admin','admin') %}
+    {% set is_manager = role in ('super_admin','admin','manager') %}
+
+    {# ── الرئيسية (الكل) ── #}
     <div class="sb-section">الرئيسية</div>
     <a href="{{ url_for('dashboard') }}" class="sb-link {% if request.endpoint=='dashboard' %}active{% endif %}">
       <span class="sb-icon">📊</span> لوحة التحكم
     </a>
 
+    {# ── المراسلات (الكل) ── #}
     <div class="sb-section">المراسلات</div>
     <a href="{{ url_for('new_correspondence') }}" class="sb-link {% if request.endpoint=='new_correspondence' %}active{% endif %}">
       <span class="sb-icon">✏️</span> مراسلة جديدة
@@ -464,14 +478,19 @@ textarea.form-control{min-height:120px;resize:vertical}
       <span class="sb-icon">🗄️</span> الأرشيف
     </a>
 
+    {# ── إدارة الأعمال (الكل) ── #}
     <div class="sb-section">إدارة الأعمال</div>
     <a href="{{ url_for('projects') }}" class="sb-link {% if request.endpoint in ('projects','new_project','edit_project') %}active{% endif %}">
       <span class="sb-icon">🏗️</span> المشاريع
     </a>
+    {% if is_manager %}
     <a href="{{ url_for('contacts') }}" class="sb-link {% if request.endpoint in ('contacts','new_contact','edit_contact') %}active{% endif %}">
       <span class="sb-icon">👥</span> جهات الاتصال
     </a>
+    {% endif %}
 
+    {# ── التحليلات (المدير وأعلى) ── #}
+    {% if is_manager %}
     <div class="sb-section">التحليلات والذكاء الاصطناعي</div>
     <a href="{{ url_for('reports') }}" class="sb-link {% if request.endpoint=='reports' %}active{% endif %}">
       <span class="sb-icon">📈</span> التقارير والإحصائيات
@@ -482,10 +501,14 @@ textarea.form-control{min-height:120px;resize:vertical}
     <a href="{{ url_for('notification_settings_view') }}" class="sb-link {% if request.endpoint=='notification_settings_view' %}active{% endif %}">
       <span class="sb-icon">🤖</span> الإشعارات والذكاء الاصطناعي
     </a>
+    {% if is_admin %}
     <a href="{{ url_for('export_excel') }}" class="sb-link" target="_blank">
       <span class="sb-icon">⬇️</span> تصدير Excel
     </a>
+    {% endif %}
+    {% endif %}
 
+    {# ── الإدارة (admin فقط) ── #}
     {% if is_admin %}
     <div class="sb-section">الإدارة</div>
     <a href="{{ url_for('users') }}" class="sb-link {% if request.endpoint in ('users','new_user','edit_user') %}active{% endif %}">
@@ -494,19 +517,24 @@ textarea.form-control{min-height:120px;resize:vertical}
     <a href="{{ url_for('settings') }}" class="sb-link {% if request.endpoint=='settings' %}active{% endif %}">
       <span class="sb-icon">⚙️</span> إعدادات النظام
     </a>
-    <a href="{{ url_for('api_docs') }}" class="sb-link {% if request.endpoint=='api_docs' %}active{% endif %}">
-      <span class="sb-icon">🔗</span> واجهة REST API
-    </a>
-    <a href="{{ url_for('super_admin') }}" class="sb-link {% if request.endpoint in ('super_admin','new_company') %}active{% endif %}">
-      <span class="sb-icon">🏢</span> إدارة الشركات
-    </a>
     <a href="{{ url_for('email_ingestion') }}" class="sb-link {% if request.endpoint=='email_ingestion' %}active{% endif %}">
       <span class="sb-icon">📧</span> استقبال البريد
     </a>
+    <a href="{{ url_for('api_docs') }}" class="sb-link {% if request.endpoint=='api_docs' %}active{% endif %}">
+      <span class="sb-icon">🔗</span> واجهة REST API
+    </a>
     {% endif %}
 
+    {# ── إدارة الشركات (super_admin فقط) ── #}
+    {% if is_super %}
+    <div class="sb-section">مالك النظام</div>
+    <a href="{{ url_for('super_admin') }}" class="sb-link {% if request.endpoint in ('super_admin','new_company') %}active{% endif %}">
+      <span class="sb-icon">🏢</span> إدارة الشركات
+    </a>
+    {% endif %}
+
+    {# ── الحساب (الكل) ── #}
     <div class="sb-section">الحساب</div>
-    <!-- Language Switcher -->
     <div class="sb-lang">
       <span class="sb-icon">🌐</span>
       <span style="font-size:12px;color:var(--text2);font-weight:600">اللغة</span>
