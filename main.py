@@ -4,6 +4,7 @@ CCMS — Corporate Communication Management System
 Flask Application — Professional Edition 2.0
 """
 import os, sys, json
+from scheduler import start_scheduler
 from security import (
     log_audit, get_audit_log, AUDIT_ACTIONS,
     get_user_corr_permission, can_view_corr, can_edit_corr, can_manage_corr,
@@ -125,6 +126,11 @@ def fromjson_sub_wf(v):
         return json.loads(v) if v else []
     except:
         return []
+
+@app.template_filter('fromjson')
+def filter_fromjson(v):
+    try: return json.loads(v) if v else []
+    except: return []
 
 @app.template_filter('fromjson_sub')
 def fromjson_sub(v):
@@ -360,8 +366,21 @@ def _corr_query(type_filter=None, archived=0):
     if type_filter:
         sql += " AND c.type=?"; params.append(type_filter)
     if q:
-        sql += " AND (c.subject LIKE ? OR c.party LIKE ? OR c.ref_num LIKE ? OR c.body LIKE ?)"
-        params += [f'%{q}%']*4
+        # استخدم FTS5 للبحث الكامل إذا كان متاحاً، وإلا LIKE
+        try:
+            fts_ids = [r['correspondence_id'] for r in conn.execute(
+                "SELECT correspondence_id FROM corr_fts WHERE corr_fts MATCH ? LIMIT 500",
+                (q + '*',)).fetchall()]
+            if fts_ids:
+                placeholders = ','.join('?' * len(fts_ids))
+                sql += f" AND c.id IN ({placeholders})"
+                params += fts_ids
+            else:
+                sql += " AND (c.subject LIKE ? OR c.party LIKE ? OR c.ref_num LIKE ? OR c.body LIKE ?)"
+                params += [f'%{q}%']*4
+        except Exception:
+            sql += " AND (c.subject LIKE ? OR c.party LIKE ? OR c.ref_num LIKE ? OR c.body LIKE ?)"
+            params += [f'%{q}%']*4
     if proj:   sql += " AND c.project_id=?";    params.append(proj)
     if status: sql += " AND c.status=?";        params.append(status)
     if priority: sql += " AND c.priority=?";    params.append(priority)
@@ -521,9 +540,21 @@ def new_correspondence():
         flash(f'✅ تم إنشاء المراسلة <strong>{ref_num}</strong> بنجاح','success')
         return redirect(url_for('view_correspondence', cid=corr_id))
 
+    # تحميل قالب إذا تم اختياره
+    pre_template = request.args.get('template','')
+    pre_form = {}
+    if pre_template:
+        t = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?",(pre_template,cid)).fetchone()
+        if t:
+            pre_form = {'subject': t['subject_template'] or '', 'body': t['body_template'],
+                        'type': t['corr_type'], '_template_id': pre_template,
+                        '_variables': t['variables_json']}
+            conn.execute("UPDATE templates SET usage_count=usage_count+1 WHERE id=?",(pre_template,))
+            conn.commit()
     conn.close()
     return render_template('correspondence_form.html', projects=projects,
-        contacts=contacts, templates=templates_list, departments=departments, form={})
+        contacts=contacts, templates=templates_list, departments=departments,
+        form=pre_form, pre_template=pre_template)
 
 @app.route('/correspondence/<cid>')
 @login_required
@@ -1729,6 +1760,334 @@ def settings():
 
 
 
+
+
+# ══════════════════════════════════════════════════════
+#  نظام القوالب المتقدم — Templates
+# ══════════════════════════════════════════════════════
+@app.route('/templates')
+@manager_required
+def templates_list():
+    conn = get_db()
+    cid  = session['company_id']
+    tmps = conn.execute("""
+        SELECT t.*, u.full_name as creator_name
+        FROM templates t LEFT JOIN users u ON t.created_by=u.id
+        WHERE t.company_id=? ORDER BY t.category, t.name
+    """, (cid,)).fetchall()
+    categories = list(dict.fromkeys(t['category'] for t in tmps))
+    conn.close()
+    return render_template('templates_list.html', templates=tmps, categories=categories)
+
+
+@app.route('/templates/new', methods=['GET','POST'])
+@manager_required
+def template_new():
+    conn = get_db()
+    cid  = session['company_id']
+    if request.method == 'POST':
+        body     = request.form.get('body_template','').strip()
+        subject  = request.form.get('subject_template','').strip()
+        # استخرج المتغيرات من النص {{ variable }}
+        import re
+        vars_found = list(set(re.findall(r'\{\{([^}]+)\}\}', body + ' ' + subject)))
+        vars_json  = json.dumps([v.strip() for v in vars_found], ensure_ascii=False)
+        tid = new_id()
+        conn.execute("""INSERT INTO templates
+            (id,company_id,name,category,corr_type,subject_template,body_template,variables_json,is_active,usage_count,created_at,created_by)
+            VALUES (?,?,?,?,?,?,?,?,1,0,?,?)""",
+            (tid, cid,
+             request.form.get('name','').strip(),
+             request.form.get('category','general'),
+             request.form.get('corr_type','out'),
+             subject, body, vars_json, now(), session['user_id']))
+        conn.commit(); conn.close()
+        flash('✅ تم إنشاء القالب', 'success')
+        return redirect(url_for('templates_list'))
+    conn.close()
+    return render_template('template_form.html', item=None, form={})
+
+
+@app.route('/templates/<tid>/edit', methods=['GET','POST'])
+@manager_required
+def template_edit(tid):
+    conn = get_db()
+    cid  = session['company_id']
+    t    = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?", (tid,cid)).fetchone()
+    if not t:
+        flash('القالب غير موجود','error'); conn.close()
+        return redirect(url_for('templates_list'))
+    if request.method == 'POST':
+        body    = request.form.get('body_template','').strip()
+        subject = request.form.get('subject_template','').strip()
+        import re
+        vars_found = list(set(re.findall(r'\{\{([^}]+)\}\}', body + ' ' + subject)))
+        vars_json  = json.dumps([v.strip() for v in vars_found], ensure_ascii=False)
+        conn.execute("""UPDATE templates SET
+            name=?,category=?,corr_type=?,subject_template=?,
+            body_template=?,variables_json=? WHERE id=?""",
+            (request.form.get('name','').strip(),
+             request.form.get('category','general'),
+             request.form.get('corr_type','out'),
+             subject, body, vars_json, tid))
+        conn.commit(); conn.close()
+        flash('✅ تم تحديث القالب', 'success')
+        return redirect(url_for('templates_list'))
+    conn.close()
+    return render_template('template_form.html', item=t, form=dict(t))
+
+
+@app.route('/templates/<tid>/delete', methods=['POST'])
+@manager_required
+def template_delete(tid):
+    conn = get_db()
+    conn.execute("DELETE FROM templates WHERE id=? AND company_id=?", (tid, session['company_id']))
+    conn.commit(); conn.close()
+    flash('تم حذف القالب','info')
+    return redirect(url_for('templates_list'))
+
+
+@app.route('/api/templates/<tid>/preview', methods=['POST'])
+@login_required
+def api_template_preview(tid):
+    """معاينة القالب بعد ملء المتغيرات"""
+    conn = get_db()
+    t = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?",
+                     (tid, session['company_id'])).fetchone()
+    conn.close()
+    if not t: return jsonify({'error': 'not found'}), 404
+    values = request.json or {}
+    body    = t['body_template']
+    subject = t['subject_template'] or ''
+    for key, val in values.items():
+        body    = body.replace('{{' + key + '}}', val)
+        subject = subject.replace('{{' + key + '}}', val)
+    # Fill remaining vars with highlights
+    import re
+    body    = re.sub(r'\{\{([^}]+)\}\}', r'<mark>[[]]</mark>', body)
+    subject = re.sub(r'\{\{([^}]+)\}\}', r'[[]]', subject)
+    return jsonify({'body': body, 'subject': subject})
+
+
+# ══════════════════════════════════════════════════════
+#  FULL-TEXT SEARCH — بحث متقدم
+# ══════════════════════════════════════════════════════
+@app.route('/search')
+@login_required
+def advanced_search():
+    """صفحة البحث المتقدم مع FTS"""
+    q        = request.args.get('q','').strip()
+    category = request.args.get('category','')
+    type_    = request.args.get('type','')
+    date_from= request.args.get('date_from','')
+    date_to  = request.args.get('date_to','')
+    results  = []
+    total    = 0
+
+    if q:
+        conn = get_db()
+        cid  = session['company_id']
+        pid_list = get_user_project_ids()
+
+        try:
+            # FTS5 search
+            fts_ids = [r['correspondence_id'] for r in conn.execute(
+                "SELECT correspondence_id FROM corr_fts WHERE corr_fts MATCH ? LIMIT 200",
+                (q + '*',)).fetchall()]
+        except Exception:
+            fts_ids = []
+
+        if fts_ids:
+            placeholders = ','.join('?' * len(fts_ids))
+            sql = f"""SELECT c.*,p.name as proj_name,u.full_name as creator_name
+                      FROM correspondence c
+                      LEFT JOIN projects p ON c.project_id=p.id
+                      LEFT JOIN users u ON c.created_by=u.id
+                      WHERE c.id IN ({placeholders})
+                        AND c.company_id=? AND c.is_deleted=0"""
+            params = fts_ids + [cid]
+        else:
+            sql = """SELECT c.*,p.name as proj_name,u.full_name as creator_name
+                     FROM correspondence c
+                     LEFT JOIN projects p ON c.project_id=p.id
+                     LEFT JOIN users u ON c.created_by=u.id
+                     WHERE c.company_id=? AND c.is_deleted=0
+                     AND (c.subject LIKE ? OR c.body LIKE ? OR c.ref_num LIKE ? OR c.party LIKE ?)"""
+            params = [cid] + [f'%{q}%']*4
+
+        if category: sql += " AND c.category=?"; params.append(category)
+        if type_:    sql += " AND c.type=?";     params.append(type_)
+        if date_from:sql += " AND c.date>=?";    params.append(date_from)
+        if date_to:  sql += " AND c.date<=?";    params.append(date_to)
+        sql += " ORDER BY c.date DESC LIMIT 50"
+
+        results = conn.execute(sql, params).fetchall()
+        total   = len(results)
+
+        # Apply project filter for non-admins
+        if pid_list is not None:
+            results = [r for r in results
+                       if not r['project_id'] or r['project_id'] in pid_list]
+        conn.close()
+
+    return render_template('advanced_search.html',
+                           results=results, total=total, q=q,
+                           category=category, type_=type_,
+                           date_from=date_from, date_to=date_to)
+
+
+# ══════════════════════════════════════════════════════
+#  EXECUTIVE DASHBOARD — داشبورد تنفيذي
+# ══════════════════════════════════════════════════════
+@app.route('/executive-dashboard')
+@manager_required
+def executive_dashboard():
+    """داشبورد تنفيذي بـ KPIs حقيقية"""
+    conn = get_db()
+    cid  = session['company_id']
+    today= datetime.date.today()
+
+    # ── KPIs الأساسية ──────────────────────────────
+    all_c = conn.execute("""
+        SELECT c.*, u.full_name as creator_name, d.name as dept_name
+        FROM correspondence c
+        LEFT JOIN users u ON c.created_by=u.id
+        LEFT JOIN departments d ON c.department_id=d.id
+        WHERE c.company_id=? AND c.is_deleted=0
+    """, (cid,)).fetchall()
+
+    total       = len(all_c)
+    total_out   = sum(1 for x in all_c if x['type']=='out')
+    total_in    = sum(1 for x in all_c if x['type']=='in')
+    total_internal = sum(1 for x in all_c if x['type']=='internal')
+    approved    = sum(1 for x in all_c if x['status']=='approved')
+    pending_wf  = sum(1 for x in all_c if x['workflow_status']=='in_review')
+    drafts      = sum(1 for x in all_c if x['status']=='draft')
+    urgent      = sum(1 for x in all_c if x['priority']=='urgent')
+
+    # ── متوسط وقت الرد ──────────────────────────────
+    replied = conn.execute("""
+        SELECT c.date, c.updated_at FROM correspondence c
+        WHERE c.company_id=? AND c.type='in'
+          AND c.reply_status='replied' AND c.updated_at IS NOT NULL
+        LIMIT 200
+    """, (cid,)).fetchall()
+    avg_reply_hours = 0
+    if replied:
+        diffs = []
+        for r in replied:
+            try:
+                d1 = datetime.datetime.fromisoformat(r['date'][:10])
+                d2 = datetime.datetime.fromisoformat(r['updated_at'][:10])
+                diffs.append(abs((d2-d1).total_seconds()/3600))
+            except: pass
+        if diffs: avg_reply_hours = round(sum(diffs)/len(diffs), 1)
+
+    # ── نسبة الإنجاز ────────────────────────────────
+    completion_rate = round((approved / total * 100) if total > 0 else 0, 1)
+
+    # ── SLA compliance ──────────────────────────────
+    in_corrs   = [x for x in all_c if x['type']=='in']
+    overdue_sla= sum(1 for x in in_corrs
+                     if x['reply_status']=='pending' and x['date']
+                     and (today - datetime.date.fromisoformat(x['date'][:10])).days > 3)
+    sla_rate   = round(((len(in_corrs)-overdue_sla)/len(in_corrs)*100) if in_corrs else 100, 1)
+
+    # ── مقارنة شهرية (6 أشهر) ─────────────────────
+    months_data = []
+    for i in range(5,-1,-1):
+        d   = (today.replace(day=1) - datetime.timedelta(days=i*28))
+        key = d.strftime('%Y-%m')
+        m   = {
+            'label': ar_month(d.month) + ' ' + str(d.year),
+            'out':      sum(1 for x in all_c if x['date'] and x['date'][:7]==key and x['type']=='out'),
+            'in':       sum(1 for x in all_c if x['date'] and x['date'][:7]==key and x['type']=='in'),
+            'internal': sum(1 for x in all_c if x['date'] and x['date'][:7]==key and x['type']=='internal'),
+            'approved': sum(1 for x in all_c if x['date'] and x['date'][:7]==key and x['status']=='approved'),
+        }
+        months_data.append(m)
+
+    # ── أداء الأقسام ────────────────────────────────
+    dept_stats = {}
+    for x in all_c:
+        dept = x['dept_name'] or 'غير محدد'
+        if dept not in dept_stats:
+            dept_stats[dept] = {'name':dept,'total':0,'approved':0,'pending':0,'overdue':0}
+        dept_stats[dept]['total'] += 1
+        if x['status'] == 'approved': dept_stats[dept]['approved'] += 1
+        if x['status'] in ('pending','draft'): dept_stats[dept]['pending'] += 1
+        if (x['type']=='in' and x['reply_status']=='pending' and x['date'] and
+            (today - datetime.date.fromisoformat(x['date'][:10])).days > 3):
+            dept_stats[dept]['overdue'] += 1
+
+    dept_list = sorted(dept_stats.values(), key=lambda d: d['total'], reverse=True)[:8]
+    for d in dept_list:
+        d['rate'] = round(d['approved']/d['total']*100 if d['total'] > 0 else 0, 0)
+
+    # ── توزيع حسب النوع و الأولوية ──────────────────
+    priority_dist = {
+        'urgent': sum(1 for x in all_c if x['priority']=='urgent'),
+        'high':   sum(1 for x in all_c if x['priority']=='high'),
+        'normal': sum(1 for x in all_c if x['priority']=='normal'),
+        'low':    sum(1 for x in all_c if x['priority']=='low'),
+    }
+
+    # ── أكثر المستخدمين نشاطاً ─────────────────────
+    user_activity = {}
+    for x in all_c:
+        u = x['creator_name'] or 'غير محدد'
+        user_activity[u] = user_activity.get(u, 0) + 1
+    top_users = sorted(user_activity.items(), key=lambda x: x[1], reverse=True)[:5]
+
+    # ── المراسلات المتأخرة عن SLA ───────────────────
+    overdue_list = [x for x in all_c
+                    if x['type']=='in' and x['reply_status']=='pending' and x['date']
+                    and (today - datetime.date.fromisoformat(x['date'][:10])).days > 3][:10]
+
+    conn.close()
+    return render_template('executive_dashboard.html',
+        total=total, total_out=total_out, total_in=total_in,
+        total_internal=total_internal, approved=approved,
+        pending_wf=pending_wf, drafts=drafts, urgent=urgent,
+        avg_reply_hours=avg_reply_hours, completion_rate=completion_rate,
+        sla_rate=sla_rate, overdue_sla=overdue_sla,
+        months_data=months_data, dept_list=dept_list,
+        priority_dist=priority_dist, top_users=top_users,
+        overdue_list=overdue_list)
+
+
+# ── API: scheduler status ──────────────────────────
+@app.route('/api/scheduler/status')
+@admin_required
+def scheduler_status():
+    """حالة المجدول التلقائي"""
+    global _scheduler
+    if _scheduler and _scheduler.running:
+        jobs = [{'id':j.id,'next':str(j.next_run_time)} for j in _scheduler.get_jobs()]
+        return jsonify({'running':True,'jobs':jobs})
+    return jsonify({'running':False,'jobs':[]})
+
+
+@app.route('/api/scheduler/run/<job_id>', methods=['POST'])
+@admin_required
+def scheduler_run_now(job_id):
+    """تشغيل مهمة مجدولة فوراً (للاختبار)"""
+    global _scheduler
+    job_map = {
+        'sla':      lambda: __import__('scheduler').check_sla_alerts(app),
+        'deadline': lambda: __import__('scheduler').check_deadline_alerts(app),
+        'workflow': lambda: __import__('scheduler').check_workflow_alerts(app),
+        'digest':   lambda: __import__('scheduler').send_daily_digest(app),
+    }
+    if job_id in job_map:
+        try:
+            job_map[job_id]()
+            return jsonify({'success':True,'message':f'تم تشغيل {job_id}'})
+        except Exception as e:
+            return jsonify({'error':str(e)}),500
+    return jsonify({'error':'job not found'}),404
+
+
 # ══════════════════════════════════════════════════════
 #  AUDIT TRAIL — سجل التدقيق
 # ══════════════════════════════════════════════════════
@@ -2308,6 +2667,14 @@ button{background:linear-gradient(135deg,#00b4d8,#06ffa5);color:#000;border:none
   <button onclick="location.reload()">🔄 إعادة المحاولة</button>
 </div></body></html>"""
 
+
+
+# ── Start scheduler ────────────────────────────────
+with app.app_context():
+    try:
+        _scheduler = start_scheduler(app)
+    except Exception as _se:
+        app.logger.warning(f'Scheduler init skipped: {_se}')
 
 if __name__ == '__main__':
     init_db()
