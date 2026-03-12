@@ -852,7 +852,7 @@ def edit_project(pid):
     return render_template('project_form.html', form=proj, pid=pid, depts=depts, managers=managers)
 
 @app.route('/projects/<pid>/delete', methods=['POST'])
-@admin_required
+@manager_required
 def delete_project(pid):
     conn = get_db()
     conn.execute("UPDATE projects SET is_active=0 WHERE id=? AND company_id=?", (pid,session['company_id']))
