@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CCMS">
+<meta name="theme-color" content="#030b1f">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+<title>CCMS Mobile</title>
+<style>
+  :root {
+    --bg: #030b1f; --card: #0d1b2a; --card2: #111f33;
+    --sky: #00b4d8; --mint: #06ffa5; --gold: #ffc107;
+    --danger: #ff6b35; --border: rgba(255,255,255,.08);
+    --text: #e8eaf6; --text2: #b0bec5; --text3: #546e7a;
+    --nav-h: 64px; --header-h: 56px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text);
+         min-height: 100vh; padding-bottom: calc(var(--nav-h) + var(--safe-bottom)); }
+
+  /* ── Header ── */
+  .mob-header {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--card); border-bottom: 1px solid var(--border);
+    height: var(--header-h); display: flex; align-items: center;
+    padding: 0 16px; gap: 10px;
+  }
+  .mob-header .title { font-size: 15px; font-weight: 700; flex: 1; }
+  .mob-header .badge-notif {
+    background: var(--danger); color: #fff; border-radius: 10px;
+    padding: 1px 6px; font-size: 11px; font-weight: 700;
+  }
+  .header-btn { background: none; border: none; color: var(--text2);
+                font-size: 20px; cursor: pointer; padding: 6px; border-radius: 8px; }
+  .header-btn:active { background: var(--card2); }
+
+  /* ── Bottom Nav ── */
+  .bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+    background: var(--card); border-top: 1px solid var(--border);
+    height: calc(var(--nav-h) + var(--safe-bottom));
+    padding-bottom: var(--safe-bottom);
+    display: flex; align-items: stretch;
+  }
+  .nav-item {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 3px; cursor: pointer; padding: 8px 4px;
+    border: none; background: none; color: var(--text3); font-size: 11px;
+    transition: color .15s; position: relative; text-decoration: none;
+  }
+  .nav-item .icon { font-size: 22px; line-height: 1; }
+  .nav-item.active { color: var(--sky); }
+  .nav-item.active .icon { filter: drop-shadow(0 0 4px var(--sky)); }
+  .nav-badge {
+    position: absolute; top: 6px; right: calc(50% - 16px);
+    background: var(--danger); color: #fff; border-radius: 8px;
+    padding: 0 5px; font-size: 10px; font-weight: 700; min-width: 16px;
+    text-align: center; line-height: 16px; height: 16px;
+  }
+  /* FAB */
+  .fab {
+    position: fixed; bottom: calc(var(--nav-h) + var(--safe-bottom) + 16px);
+    left: 50%; transform: translateX(-50%);
+    width: 56px; height: 56px; border-radius: 28px;
+    background: linear-gradient(135deg, var(--sky), var(--mint));
+    border: none; cursor: pointer; z-index: 150;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; box-shadow: 0 4px 20px rgba(0,180,216,.5);
+    transition: transform .15s;
+  }
+  .fab:active { transform: translateX(-50%) scale(.92); }
+
+  /* ── Pages ── */
+  .page { display: none; padding: 16px; }
+  .page.active { display: block; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--card); border-radius: 14px; border: 1px solid var(--border);
+    overflow: hidden; margin-bottom: 12px;
+  }
+  .card-body { padding: 14px; }
+
+  /* ── KPI Row ── */
+  .kpi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+  .kpi { background: var(--card); border-radius: 14px; padding: 14px; border: 1px solid var(--border); }
+  .kpi-val { font-size: 28px; font-weight: 800; color: var(--sky); line-height: 1; }
+  .kpi-label { font-size: 12px; color: var(--text3); margin-top: 4px; }
+
+  /* ── Corr Items ── */
+  .corr-item {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 14px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
+    transition: background .1s; text-decoration: none; color: inherit;
+  }
+  .corr-item:last-child { border-bottom: none; }
+  .corr-item:active { background: var(--card2); }
+  .corr-icon { width: 40px; height: 40px; border-radius: 10px; display: flex;
+               align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .corr-info { flex: 1; min-width: 0; }
+  .corr-ref { font-size: 11px; color: var(--sky); font-weight: 600; }
+  .corr-subject { font-size: 13px; font-weight: 600; white-space: nowrap;
+                  overflow: hidden; text-overflow: ellipsis; margin: 2px 0; }
+  .corr-meta { font-size: 11px; color: var(--text3); }
+  .corr-arrow { color: var(--text3); font-size: 16px; align-self: center; }
+
+  /* ── Badges ── */
+  .badge { border-radius: 6px; padding: 2px 7px; font-size: 11px; font-weight: 600; display: inline-block; }
+  .badge-out  { background: rgba(0,180,216,.15);  color: var(--sky); }
+  .badge-in   { background: rgba(6,255,165,.15);  color: var(--mint); }
+  .badge-int  { background: rgba(255,193,7,.15);  color: var(--gold); }
+  .badge-urgent { background: rgba(255,107,53,.2); color: var(--danger); }
+
+  /* ── Search Bar ── */
+  .search-bar {
+    display: flex; gap: 8px; padding: 12px 16px;
+    background: var(--card); border-bottom: 1px solid var(--border);
+  }
+  .search-input {
+    flex: 1; background: var(--card2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 14px; color: var(--text);
+    font-size: 14px; outline: none;
+  }
+  .search-input:focus { border-color: var(--sky); }
+
+  /* ── Workflow Tasks ── */
+  .task-item { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .task-item:last-child { border-bottom: none; }
+  .task-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .btn-approve { background: rgba(6,255,165,.15); color: var(--mint); border: 1px solid var(--mint);
+                 border-radius: 8px; padding: 8px 14px; font-size: 12px; flex: 1; cursor: pointer; }
+  .btn-reject  { background: rgba(255,107,53,.15); color: var(--danger); border: 1px solid var(--danger);
+                 border-radius: 8px; padding: 8px 14px; font-size: 12px; flex: 1; cursor: pointer; }
+
+  /* ── Notification item ── */
+  .notif-item { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; }
+  .notif-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sky);
+               flex-shrink: 0; margin-top: 5px; }
+  .notif-dot.read { background: var(--text3); }
+
+  /* ── Profile ── */
+  .profile-avatar {
+    width: 80px; height: 80px; border-radius: 40px;
+    background: linear-gradient(135deg, var(--sky), var(--mint));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; margin: 0 auto 12px; font-weight: 700; color: #fff;
+  }
+  .profile-menu-item {
+    display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+    border-bottom: 1px solid var(--border); cursor: pointer; text-decoration: none; color: inherit;
+    transition: background .1s;
+  }
+  .profile-menu-item:active { background: var(--card2); }
+
+  /* ── Pull to refresh indicator ── */
+  .ptr-indicator { text-align: center; padding: 12px; font-size: 12px; color: var(--text3); display: none; }
+
+  /* ── Loading ── */
+  .loading { text-align: center; padding: 40px; color: var(--text3); font-size: 13px; }
+  .spinner { display: inline-block; width: 24px; height: 24px; border: 2px solid var(--border);
+             border-top-color: var(--sky); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── New Corr Sheet ── */
+  .bottom-sheet {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 300;
+    background: var(--card); border-radius: 20px 20px 0 0;
+    border-top: 1px solid var(--border); padding: 20px 16px;
+    padding-bottom: calc(20px + var(--safe-bottom));
+    transform: translateY(100%); transition: transform .3s cubic-bezier(.4,0,.2,1);
+  }
+  .bottom-sheet.open { transform: translateY(0); }
+  .sheet-handle { width: 40px; height: 4px; background: var(--border); border-radius: 2px;
+                  margin: 0 auto 16px; }
+  .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 299;
+                   display: none; }
+  .sheet-overlay.open { display: block; }
+  .quick-action {
+    display: flex; align-items: center; gap: 14px; padding: 14px;
+    border-radius: 12px; cursor: pointer; margin-bottom: 8px;
+    background: var(--card2); text-decoration: none; color: inherit;
+    transition: background .1s;
+  }
+  .quick-action:active { background: var(--border); }
+  .qa-icon { width: 44px; height: 44px; border-radius: 12px; display: flex;
+             align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="mob-header">
+  <div class="title">📋 CCMS</div>
+  <form action="/search" method="GET" style="display:none" id="searchForm"></form>
+  <button class="header-btn" onclick="document.getElementById('searchForm').submit()">🔎</button>
+  <a href="/notifications" class="header-btn" style="position:relative">
+    🔔
+    {% if notif_count and notif_count > 0 %}
+    <span class="badge-notif" style="position:absolute;top:2px;right:2px">{{ notif_count }}</span>
+    {% endif %}
+  </a>
+</div>
+
+<!-- Pages -->
+<!-- HOME -->
+<div class="page active" id="page-home">
+  <div class="ptr-indicator" id="ptrHome">↓ اسحب للتحديث</div>
+
+  <!-- KPIs -->
+  <div class="kpi-row">
+    <div class="kpi">
+      <div class="kpi-val" style="color:var(--sky)">{{ total }}</div>
+      <div class="kpi-label">إجمالي المراسلات</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-val" style="color:var(--danger)">{{ pending_wf }}</div>
+      <div class="kpi-label">تنتظر موافقتي</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-val" style="color:var(--gold)">{{ urgent }}</div>
+      <div class="kpi-label">عاجلة</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-val" style="color:var(--mint)">{{ overdue_sla }}</div>
+      <div class="kpi-label">تجاوزت SLA</div>
+    </div>
+  </div>
+
+  <!-- المهام العاجلة -->
+  {% if wf_tasks %}
+  <div style="font-size:13px;font-weight:700;color:var(--text3);margin-bottom:8px">⏰ تنتظر موافقتك</div>
+  <div class="card">
+    {% for t in wf_tasks[:3] %}
+    <div class="task-item">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:12px;color:var(--sky);font-weight:600">{{ t.ref_num }}</span>
+        <span class="badge badge-urgent">{{ t.step_name }}</span>
+      </div>
+      <div style="font-size:13px;font-weight:600">{{ t.subject[:50] }}</div>
+      <div class="task-actions">
+        <form method="POST" action="/workflow/step/{{ t.step_id }}/action" style="flex:1">
+          <input type="hidden" name="action" value="approve">
+          <button type="submit" class="btn-approve" style="width:100%">✅ اعتماد</button>
+        </form>
+        <form method="POST" action="/workflow/step/{{ t.step_id }}/action" style="flex:1">
+          <input type="hidden" name="action" value="return">
+          <button type="submit" class="btn-reject" style="width:100%">↩ إعادة</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- آخر المراسلات -->
+  <div style="font-size:13px;font-weight:700;color:var(--text3);margin:16px 0 8px">📨 آخر المراسلات</div>
+  <div class="card">
+    {% for r in recent %}
+    <a href="/correspondence/{{ r.id }}" class="corr-item">
+      <div class="corr-icon" style="background:{{ 'rgba(0,180,216,.15)' if r.type=='out' else 'rgba(6,255,165,.15)' if r.type=='in' else 'rgba(255,193,7,.15)' }}">
+        {{ '📤' if r.type=='out' else '📥' if r.type=='in' else '📋' }}
+      </div>
+      <div class="corr-info">
+        <div class="corr-ref">{{ r.ref_num }}</div>
+        <div class="corr-subject">{{ r.subject }}</div>
+        <div class="corr-meta">{{ r.party or '—' }} · {{ r.date }}</div>
+      </div>
+      {% if r.priority == 'urgent' %}<span class="badge badge-urgent" style="font-size:10px;align-self:center">عاجل</span>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- INCOMING -->
+<div class="page" id="page-in">
+  <div class="search-bar">
+    <input class="search-input" placeholder="بحث في الوارد..." id="inSearch">
+  </div>
+  <div class="card" id="inList">
+    <div class="loading"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<!-- OUTGOING -->
+<div class="page" id="page-out">
+  <div class="search-bar">
+    <input class="search-input" placeholder="بحث في الصادر..." id="outSearch">
+  </div>
+  <div class="card" id="outList">
+    <div class="loading"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<!-- PROFILE -->
+<div class="page" id="page-profile">
+  <div style="text-align:center;padding:24px 0 16px">
+    <div class="profile-avatar">{{ session_name[0] | upper if session_name else '؟' }}</div>
+    <div style="font-size:17px;font-weight:700">{{ session_name }}</div>
+    <div style="font-size:13px;color:var(--text3);margin-top:4px">{{ session_role }}</div>
+  </div>
+  <div class="card">
+    <a href="/profile/signature" class="profile-menu-item">
+      <span style="font-size:20px">✍️</span>
+      <div><div style="font-size:14px;font-weight:600">توقيعي الرقمي</div>
+           <div style="font-size:12px;color:var(--text3)">إنشاء أو تعديل توقيعك</div></div>
+      <span style="margin-right:auto;color:var(--text3)">›</span>
+    </a>
+    <a href="/settings" class="profile-menu-item">
+      <span style="font-size:20px">⚙️</span>
+      <div><div style="font-size:14px;font-weight:600">الإعدادات</div></div>
+      <span style="margin-right:auto;color:var(--text3)">›</span>
+    </a>
+    <a href="/executive-dashboard" class="profile-menu-item">
+      <span style="font-size:20px">📊</span>
+      <div><div style="font-size:14px;font-weight:600">الداشبورد التنفيذي</div></div>
+      <span style="margin-right:auto;color:var(--text3)">›</span>
+    </a>
+    <a href="/" class="profile-menu-item">
+      <span style="font-size:20px">🖥️</span>
+      <div><div style="font-size:14px;font-weight:600">الإصدار الكامل (Desktop)</div></div>
+      <span style="margin-right:auto;color:var(--text3)">›</span>
+    </a>
+    <a href="/logout" class="profile-menu-item" style="color:var(--danger)">
+      <span style="font-size:20px">🚪</span>
+      <div><div style="font-size:14px;font-weight:600">تسجيل الخروج</div></div>
+    </a>
+  </div>
+</div>
+
+<!-- Bottom Navigation -->
+<nav class="bottom-nav">
+  <button class="nav-item active" id="nav-home" onclick="showPage('home')">
+    <span class="icon">🏠</span>الرئيسية
+  </button>
+  <button class="nav-item" id="nav-in" onclick="showPage('in')">
+    <span class="icon">📥</span>وارد
+    {% if in_count %}<span class="nav-badge">{{ in_count }}</span>{% endif %}
+  </button>
+  <button class="nav-item" id="nav-out" onclick="showPage('out')">
+    <span class="icon">📤</span>صادر
+  </button>
+  <button class="nav-item" id="nav-profile" onclick="showPage('profile')">
+    <span class="icon">👤</span>حسابي
+  </button>
+</nav>
+
+<!-- FAB -->
+<button class="fab" onclick="openSheet()" title="مراسلة جديدة">＋</button>
+
+<!-- Quick Action Sheet -->
+<div class="sheet-overlay" id="sheetOverlay" onclick="closeSheet()"></div>
+<div class="bottom-sheet" id="bottomSheet">
+  <div class="sheet-handle"></div>
+  <div style="font-size:14px;font-weight:700;margin-bottom:14px">إنشاء مراسلة جديدة</div>
+  <a href="/correspondence/new?type=out" class="quick-action" onclick="closeSheet()">
+    <div class="qa-icon" style="background:rgba(0,180,216,.15)">📤</div>
+    <div><div style="font-size:14px;font-weight:600">مراسلة صادرة</div>
+         <div style="font-size:12px;color:var(--text3)">إرسال خطاب أو طلب</div></div>
+  </a>
+  <a href="/correspondence/new?type=in" class="quick-action" onclick="closeSheet()">
+    <div class="qa-icon" style="background:rgba(6,255,165,.15)">📥</div>
+    <div><div style="font-size:14px;font-weight:600">تسجيل وارد</div>
+         <div style="font-size:12px;color:var(--text3)">تسجيل خطاب مستلم</div></div>
+  </a>
+  <a href="/correspondence/new?type=internal" class="quick-action" onclick="closeSheet()">
+    <div class="qa-icon" style="background:rgba(255,193,7,.15)">📋</div>
+    <div><div style="font-size:14px;font-weight:600">مراسلة داخلية</div>
+         <div style="font-size:12px;color:var(--text3)">مذكرة أو تعميم داخلي</div></div>
+  </a>
+</div>
+
+<script>
+// ── Navigation ──────────────────────────────────────
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  if (name === 'in')  loadList('in');
+  if (name === 'out') loadList('out');
+}
+
+// ── Load correspondence list ──────────────────────
+async function loadList(type) {
+  const el = document.getElementById(type + 'List');
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const res  = await fetch(`/api/mobile/list?type=${type}`);
+    const data = await res.json();
+    if (!data.items || data.items.length === 0) {
+      el.innerHTML = '<div class="loading">لا توجد مراسلات</div>';
+      return;
+    }
+    el.innerHTML = data.items.map(r => `
+      <a href="/correspondence/${r.id}" class="corr-item">
+        <div class="corr-icon" style="background:${r.type==='out'?'rgba(0,180,216,.15)':r.type==='in'?'rgba(6,255,165,.15)':'rgba(255,193,7,.15)'}">
+          ${r.type==='out'?'📤':r.type==='in'?'📥':'📋'}
+        </div>
+        <div class="corr-info">
+          <div class="corr-ref">${r.ref_num}</div>
+          <div class="corr-subject">${r.subject}</div>
+          <div class="corr-meta">${r.party||'—'} · ${r.date}</div>
+        </div>
+        ${r.priority==='urgent'?'<span class="badge badge-urgent" style="font-size:10px;align-self:center">عاجل</span>':''}
+      </a>`).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="loading">خطأ في التحميل</div>';
+  }
+}
+
+// ── Search ───────────────────────────────────────
+let searchTimer;
+['in','out'].forEach(type => {
+  const inp = document.getElementById(type + 'Search');
+  if (inp) inp.addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => loadList(type + '&q=' + inp.value), 400);
+  });
+});
+
+// ── FAB Sheet ────────────────────────────────────
+function openSheet() {
+  document.getElementById('bottomSheet').classList.add('open');
+  document.getElementById('sheetOverlay').classList.add('open');
+}
+function closeSheet() {
+  document.getElementById('bottomSheet').classList.remove('open');
+  document.getElementById('sheetOverlay').classList.remove('open');
+}
+
+// ── PWA Install Prompt ───────────────────────────
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  // Show install banner after 3 seconds
+  setTimeout(() => {
+    if (!localStorage.getItem('pwa_dismissed')) {
+      showInstallBanner();
+    }
+  }, 3000);
+});
+
+function showInstallBanner() {
+  const banner = document.createElement('div');
+  banner.id = 'installBanner';
+  banner.style.cssText = `
+    position:fixed;top:64px;left:12px;right:12px;z-index:500;
+    background:var(--card);border:1px solid var(--sky);border-radius:14px;
+    padding:14px 16px;display:flex;gap:12px;align-items:center;
+    box-shadow:0 8px 32px rgba(0,0,0,.4);`;
+  banner.innerHTML = `
+    <span style="font-size:28px">📱</span>
+    <div style="flex:1">
+      <div style="font-size:14px;font-weight:700">ثبّت التطبيق</div>
+      <div style="font-size:12px;color:var(--text3)">أضف CCMS لشاشتك الرئيسية</div>
+    </div>
+    <button onclick="installPWA()" style="background:var(--sky);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;cursor:pointer">تثبيت</button>
+    <button onclick="dismissInstall()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px">×</button>`;
+  document.body.appendChild(banner);
+}
+
+function installPWA() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(() => { deferredPrompt = null; });
+  }
+  document.getElementById('installBanner')?.remove();
+}
+
+function dismissInstall() {
+  localStorage.setItem('pwa_dismissed', '1');
+  document.getElementById('installBanner')?.remove();
+}
+
+// ── Service Worker ────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/static/sw.js').then(reg => {
+    console.log('SW registered');
+  });
+}
+</script>
+</body>
+</html>

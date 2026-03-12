@@ -1,0 +1,262 @@
+{% extends 'base.html' %}
+{% block title %}توقيعي الرقمي{% endblock %}
+{% block page_title %}✍️ توقيعي الرقمي{% endblock %}
+{% block page_sub %}أنشئ توقيعك الخطي — سيُطبَّق على جميع المراسلات الموقَّعة{% endblock %}
+{% block content %}
+
+<div style="max-width:700px;margin:0 auto">
+
+  <!-- التوقيع الحالي -->
+  {% if existing %}
+  <div class="card mb-4" style="border-color:var(--mint)">
+    <div class="card-header" style="background:rgba(6,255,165,.08)">
+      <h6 class="mb-0" style="color:var(--mint)">✅ توقيعك الحالي</h6>
+    </div>
+    <div class="card-body" style="padding:20px;text-align:center">
+      <div style="background:#fff;border-radius:8px;padding:12px;display:inline-block;margin-bottom:12px">
+        <img src="{{ existing }}" style="max-width:300px;max-height:100px;object-fit:contain">
+      </div>
+      <div style="font-size:13px;color:var(--text3);margin-bottom:12px">
+        {{ user.full_name }} | {{ user.job_title or '' }}
+      </div>
+      <form method="POST">
+        <input type="hidden" name="action" value="delete">
+        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('حذف التوقيع الحالي؟')">
+          🗑 حذف التوقيع
+        </button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- لوحة الرسم -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h6 class="mb-0">✍️ ارسم توقيعك</h6>
+    </div>
+    <div class="card-body" style="padding:20px">
+      <!-- تبويبات -->
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <button class="btn btn-electric btn-sm" id="tabDraw" onclick="switchTab('draw')">✍️ رسم يدوي</button>
+        <button class="btn btn-ghost btn-sm" id="tabType" onclick="switchTab('type')">⌨️ كتابة</button>
+        <button class="btn btn-ghost btn-sm" id="tabUpload" onclick="switchTab('upload')">📁 رفع صورة</button>
+      </div>
+
+      <!-- رسم يدوي -->
+      <div id="paneDraw">
+        <div style="border:2px solid var(--border);border-radius:8px;overflow:hidden;background:#fff;position:relative">
+          <canvas id="sigCanvas" width="640" height="180"
+                  style="display:block;width:100%;touch-action:none;cursor:crosshair"></canvas>
+          <div style="position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
+                      font-size:11px;color:#aaa;pointer-events:none">
+            ارسم توقيعك هنا
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="clearCanvas()">🗑 مسح</button>
+          <button class="btn btn-ghost btn-sm" onclick="undoLast()">↩ تراجع</button>
+          <div style="display:flex;align-items:center;gap:6px;margin-right:auto">
+            <label style="font-size:12px;color:var(--text3)">سُمك القلم:</label>
+            <input type="range" id="brushSize" min="1" max="8" value="3" style="width:80px">
+            <label style="font-size:12px;color:var(--text3)">اللون:</label>
+            <input type="color" id="brushColor" value="#1a237e" style="width:32px;height:28px;border:none;background:none;cursor:pointer">
+          </div>
+        </div>
+      </div>
+
+      <!-- كتابة نصية -->
+      <div id="paneType" style="display:none">
+        <input id="typedName" class="form-control mb-3" placeholder="اكتب اسمك" value="{{ user.full_name }}">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          {% for font in ["'Dancing Script', cursive", "'Pacifico', cursive", "'Caveat', cursive", "'Satisfy', cursive"] %}
+          {% set font_name = font.split("'")[1] %}
+          <button class="btn btn-outline btn-sm font-preview-btn"
+                  data-font="{{ font }}"
+                  onclick="selectFont(this)"
+                  style="font-family:{{ font }};font-size:18px">{{ user.full_name }}</button>
+          {% endfor %}
+        </div>
+        <canvas id="typeCanvas" width="640" height="120" style="display:none"></canvas>
+        <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Pacifico&family=Caveat:wght@700&family=Satisfy&display=swap" rel="stylesheet">
+      </div>
+
+      <!-- رفع صورة -->
+      <div id="paneUpload" style="display:none">
+        <div id="uploadZone" style="border:2px dashed var(--border);border-radius:8px;padding:40px;text-align:center;cursor:pointer"
+             onclick="document.getElementById('sigFile').click()">
+          <div style="font-size:36px;margin-bottom:8px">📁</div>
+          <div style="color:var(--text3)">اضغط لرفع صورة التوقيع (PNG/JPG)</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:4px">خلفية بيضاء أو شفافة — الحجم الأقصى 2MB</div>
+        </div>
+        <input type="file" id="sigFile" accept="image/*" style="display:none" onchange="handleUpload(event)">
+        <canvas id="uploadCanvas" width="640" height="150" style="display:none;margin-top:12px;border-radius:8px;background:#fff"></canvas>
+      </div>
+
+      <!-- زر الحفظ -->
+      <form method="POST" id="sigForm" style="margin-top:16px">
+        <input type="hidden" name="sig_data" id="sigData">
+        <input type="hidden" name="sig_type" id="sigType" value="drawn">
+        <div style="display:flex;gap:10px">
+          <button type="button" class="btn btn-outline" onclick="previewSignature()">👁️ معاينة</button>
+          <button type="submit" class="btn btn-electric" style="flex:1" onclick="return prepareSave()">
+            💾 حفظ التوقيع
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- معاينة على PDF -->
+  <div class="card" id="previewBox" style="display:none">
+    <div class="card-header"><h6 class="mb-0">👁️ معاينة على الخطاب</h6></div>
+    <div class="card-body" style="padding:20px">
+      <div style="background:#f5f5f5;border-radius:8px;padding:20px;position:relative;min-height:200px">
+        <div style="color:#333;font-size:13px;line-height:2;margin-bottom:40px">
+          <p>السادة / ...</p>
+          <p>الموضوع: ...</p>
+          <p>نص الخطاب...</p>
+        </div>
+        <!-- محاكاة التوقيع على الخطاب -->
+        <div style="position:absolute;bottom:16px;left:16px;background:#fff;border:1px solid #1a237e;border-radius:6px;padding:8px 12px;min-width:180px">
+          <img id="previewSigImg" src="" style="max-width:160px;max-height:50px;display:block;object-fit:contain">
+          <div style="font-size:10px;color:#1a237e;font-weight:bold;margin-top:4px">{{ user.full_name }}</div>
+          <div style="font-size:9px;color:#666">{{ user.job_title or '' }}</div>
+        </div>
+        <!-- محاكاة الختم الرقمي -->
+        <div style="position:absolute;bottom:16px;right:16px;background:#f0fff4;border:1px solid #06ffa5;border-radius:6px;padding:6px 10px;font-size:9px;color:#0a1628">
+          <div style="font-weight:bold;color:#06ffa5">✓ APPROVED | معتمد رقمياً</div>
+          <div>Hash: A1B2C3D4E5F6G7H8</div>
+          <div>{{ now[:10] if now else '2025-01-01' }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── Canvas Signature Pad ──────────────────────────────
+const canvas = document.getElementById('sigCanvas');
+const ctx = canvas.getContext('2d');
+let drawing = false, paths = [], currentPath = [];
+
+function getPos(e) {
+  const r = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / r.width;
+  const scaleY = canvas.height / r.height;
+  if (e.touches) {
+    return {
+      x: (e.touches[0].clientX - r.left) * scaleX,
+      y: (e.touches[0].clientY - r.top) * scaleY
+    };
+  }
+  return { x: (e.clientX - r.left) * scaleX, y: (e.clientY - r.top) * scaleY };
+}
+
+canvas.addEventListener('mousedown',  e => { drawing=true; currentPath=[getPos(e)]; });
+canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing=true; currentPath=[getPos(e)]; }, {passive:false});
+canvas.addEventListener('mousemove',  e => { if(!drawing) return; const p=getPos(e); currentPath.push(p); redraw(); });
+canvas.addEventListener('touchmove',  e => { e.preventDefault(); if(!drawing) return; const p=getPos(e); currentPath.push(p); redraw(); }, {passive:false});
+canvas.addEventListener('mouseup',    () => { if(drawing){ drawing=false; paths.push([...currentPath]); currentPath=[]; }});
+canvas.addEventListener('touchend',   () => { if(drawing){ drawing=false; paths.push([...currentPath]); currentPath=[]; }});
+
+function redraw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const size  = document.getElementById('brushSize').value;
+  const color = document.getElementById('brushColor').value;
+  [...paths, currentPath].forEach(path => {
+    if (path.length < 2) return;
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = size;
+    ctx.lineCap     = 'round';
+    ctx.lineJoin    = 'round';
+    ctx.moveTo(path[0].x, path[0].y);
+    path.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+  });
+}
+document.getElementById('brushSize').addEventListener('input', redraw);
+document.getElementById('brushColor').addEventListener('input', redraw);
+
+function clearCanvas() { paths=[]; currentPath=[]; ctx.clearRect(0,0,canvas.width,canvas.height); }
+function undoLast()    { paths.pop(); redraw(); }
+
+// ── Typed Signature ──────────────────────────────────
+let selectedFont = "'Dancing Script', cursive";
+function switchTab(tab) {
+  ['draw','type','upload'].forEach(t => {
+    document.getElementById('pane'+t.charAt(0).toUpperCase()+t.slice(1)).style.display = t===tab?'':'none';
+    document.getElementById('tab'+t.charAt(0).toUpperCase()+t.slice(1)).className = t===tab?'btn btn-electric btn-sm':'btn btn-ghost btn-sm';
+  });
+  document.getElementById('sigType').value = tab;
+}
+function selectFont(btn) {
+  document.querySelectorAll('.font-preview-btn').forEach(b => b.classList.replace('btn-electric','btn-outline'));
+  btn.classList.replace('btn-outline','btn-electric');
+  selectedFont = btn.dataset.font;
+}
+document.getElementById('typedName').addEventListener('input', renderTypePreview);
+function renderTypePreview() {
+  const tc = document.getElementById('typeCanvas');
+  const tctx = tc.getContext('2d');
+  tctx.clearRect(0,0,tc.width,tc.height);
+  tctx.font = `48px ${selectedFont}`;
+  tctx.fillStyle = '#1a237e';
+  tctx.textAlign = 'center';
+  tctx.textBaseline = 'middle';
+  tctx.fillText(document.getElementById('typedName').value, tc.width/2, tc.height/2);
+}
+
+// ── Upload ────────────────────────────────────────────
+function handleUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const uc = document.getElementById('uploadCanvas');
+    const uctx = uc.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      uc.style.display = 'block';
+      uctx.clearRect(0,0,uc.width,uc.height);
+      const scale = Math.min(uc.width/img.width, uc.height/img.height);
+      const x = (uc.width  - img.width  * scale) / 2;
+      const y = (uc.height - img.height * scale) / 2;
+      uctx.drawImage(img, x, y, img.width*scale, img.height*scale);
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Save / Preview ────────────────────────────────────
+function prepareSave() {
+  const type = document.getElementById('sigType').value;
+  let dataUrl = '';
+  if (type === 'drawn') {
+    if (paths.length === 0) { alert('الرجاء رسم توقيعك أولاً'); return false; }
+    dataUrl = canvas.toDataURL('image/png');
+  } else if (type === 'type') {
+    renderTypePreview();
+    const tc = document.getElementById('typeCanvas');
+    tc.style.display = 'block';
+    dataUrl = tc.toDataURL('image/png');
+  } else {
+    const uc = document.getElementById('uploadCanvas');
+    if (uc.style.display === 'none') { alert('الرجاء رفع صورة التوقيع'); return false; }
+    dataUrl = uc.toDataURL('image/png');
+  }
+  document.getElementById('sigData').value = dataUrl;
+  return true;
+}
+
+function previewSignature() {
+  if (!prepareSave()) return;
+  const data = document.getElementById('sigData').value;
+  document.getElementById('previewSigImg').src = data;
+  document.getElementById('previewBox').style.display = 'block';
+  document.getElementById('previewBox').scrollIntoView({behavior:'smooth'});
+}
+</script>
+{% endblock %}
