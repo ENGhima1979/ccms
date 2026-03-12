@@ -224,9 +224,9 @@ def login():
             conn.execute("UPDATE users SET last_login=?,login_count=login_count+1 WHERE id=?",
                          (now(), u['id']))
             conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,ip_address,user_agent,created_at)
-                            VALUES (?,?,?,?,?,?,?)""",
+                            VALUES (?,?,?,?,?,?,?,?)""",
                          (new_id(),u['company_id'],u['id'],u['username'],'LOGIN',
-                          request.remote_addr, now()))
+                          request.remote_addr, request.headers.get('User-Agent','')[:200], now()))
             conn.commit(); conn.close()
             flash(f"مرحباً {u['full_name']} 👋",'success')
             return redirect(request.args.get('next') or url_for('dashboard'))
@@ -2053,7 +2053,8 @@ def executive_dashboard():
         sla_rate=sla_rate, overdue_sla=overdue_sla,
         months_data=months_data, dept_list=dept_list,
         priority_dist=priority_dist, top_users=top_users,
-        overdue_list=overdue_list)
+        overdue_list=overdue_list,
+        today=today.isoformat())
 
 
 # ── API: scheduler status ──────────────────────────
@@ -2669,12 +2670,13 @@ button{background:linear-gradient(135deg,#00b4d8,#06ffa5);color:#000;border:none
 
 
 
-# ── Start scheduler ────────────────────────────────
+# ── Initialize DB + FTS + Scheduler on startup ─────
 with app.app_context():
     try:
+        init_db()           # يضمن FTS populated وجميع الجداول جاهزة
         _scheduler = start_scheduler(app)
     except Exception as _se:
-        app.logger.warning(f'Scheduler init skipped: {_se}')
+        app.logger.warning(f'Startup init skipped: {_se}')
 
 if __name__ == '__main__':
     init_db()
