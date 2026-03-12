@@ -602,3 +602,33 @@ def _seed_defaults(conn):
                  category,priority,status,reply_status,date,created_by,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (*c, now()))
+
+-- ─────────────────────────────────────────
+--  Full-Text Search (FTS5)
+-- ─────────────────────────────────────────
+CREATE VIRTUAL TABLE IF NOT EXISTS corr_fts USING fts5(
+    correspondence_id UNINDEXED,
+    ref_num,
+    subject,
+    body,
+    party,
+    action_required,
+    content='correspondence',
+    content_rowid='rowid'
+);
+
+-- Triggers to keep FTS in sync
+CREATE TRIGGER IF NOT EXISTS corr_fts_insert AFTER INSERT ON correspondence BEGIN
+    INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
+    VALUES (new.id, new.ref_num, new.subject, new.body, new.party, new.action_required);
+END;
+
+CREATE TRIGGER IF NOT EXISTS corr_fts_update AFTER UPDATE ON correspondence BEGIN
+    DELETE FROM corr_fts WHERE correspondence_id = old.id;
+    INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
+    VALUES (new.id, new.ref_num, new.subject, new.body, new.party, new.action_required);
+END;
+
+CREATE TRIGGER IF NOT EXISTS corr_fts_delete AFTER DELETE ON correspondence BEGIN
+    DELETE FROM corr_fts WHERE correspondence_id = old.id;
+END;
