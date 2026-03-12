@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block title %}قوالب الخطابات{% endblock %}
+{% block page_title %}📋 قوالب الخطابات{% endblock %}
+{% block page_sub %}قوالب بمتغيرات ديناميكية تُملأ تلقائياً عند الإنشاء{% endblock %}
+{% block content %}
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+  <div></div>
+  <a href="{{ url_for('template_new') }}" class="btn btn-electric">+ قالب جديد</a>
+</div>
+
+{% if templates %}
+{% for cat in categories %}
+{% set cat_tmps = templates | selectattr('category','equalto',cat) | list %}
+<div class="card mb-4">
+  <div class="card-header">
+    <h6 class="mb-0">📁 {{ cat }}</h6>
+    <span class="badge badge-normal">{{ cat_tmps|length }} قالب</span>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;padding:16px">
+    {% for t in cat_tmps %}
+    <div class="card" style="background:var(--card2);border:1px solid var(--border)">
+      <div style="padding:16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div style="font-weight:700;font-size:14px">{{ t.name }}</div>
+          <span class="badge badge-{{ 'out' if t.corr_type=='out' else 'in' if t.corr_type=='in' else 'normal' }}">
+            {{ 'صادر' if t.corr_type=='out' else 'وارد' if t.corr_type=='in' else 'داخلي' }}
+          </span>
+        </div>
+        {% if t.subject_template %}
+        <div style="font-size:12px;color:var(--text3);margin-bottom:6px">📌 {{ t.subject_template[:60] }}</div>
+        {% endif %}
+        {% set vars = t.variables_json | fromjson if t.variables_json else [] %}
+        {% if vars %}
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+          {% for v in vars %}
+          <span style="background:rgba(0,180,216,.15);color:var(--sky);padding:2px 6px;border-radius:4px;font-size:11px">{{'{{'}}{{ v }}{{ '}}'  }}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        <div style="font-size:12px;color:var(--text3);margin-bottom:12px">
+          استُخدم {{ t.usage_count }} مرة | {{ t.creator_name or '—' }}
+        </div>
+        <div style="display:flex;gap:6px">
+          <a href="{{ url_for('template_edit', tid=t.id) }}" class="btn btn-outline btn-sm" style="flex:1;text-align:center">✏️ تعديل</a>
+          <a href="{{ url_for('new_correspondence') }}?template={{ t.id }}" class="btn btn-electric btn-sm" style="flex:1;text-align:center">استخدم</a>
+          <form method="POST" action="{{ url_for('template_delete', tid=t.id) }}" onsubmit="return confirm('حذف القالب؟')">
+            <button type="submit" class="btn btn-danger btn-sm">🗑</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endfor %}
+{% else %}
+<div class="empty">
+  <div class="empty-icon">📋</div>
+  <div class="empty-title">لا توجد قوالب بعد</div>
+  <div class="empty-sub">أنشئ قوالب بمتغيرات ديناميكية مثل {{'{{'}}اسم_الجهة{{'}}'}} {{'{{'}}رقم_العقد{{'}}'}}</div>
+  <a href="{{ url_for('template_new') }}" class="btn btn-electric mt-3">+ إنشاء أول قالب</a>
+</div>
+{% endif %}
+{% endblock %}
