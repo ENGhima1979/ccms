@@ -148,6 +148,22 @@ CREATE TABLE IF NOT EXISTS user_projects (
     PRIMARY KEY(user_id, project_id)
 );
 
+
+-- ─────────────────────────────────────────
+--  صلاحيات المراسلات الدقيقة
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS correspondence_permissions (
+    id                  TEXT PRIMARY KEY,
+    correspondence_id   TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
+    user_id             TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    permission_level    INTEGER NOT NULL DEFAULT 1,
+    granted_by          TEXT REFERENCES users(id),
+    created_at          TEXT NOT NULL,
+    UNIQUE(correspondence_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_corr_perm ON correspondence_permissions(correspondence_id);
+CREATE INDEX IF NOT EXISTS idx_user_perm ON correspondence_permissions(user_id);
+
 -- ─────────────────────────────────────────
 --  جهات التواصل الخارجية
 -- ─────────────────────────────────────────
@@ -586,4 +602,3 @@ def _seed_defaults(conn):
                  category,priority,status,reply_status,date,created_by,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (*c, now()))
-
