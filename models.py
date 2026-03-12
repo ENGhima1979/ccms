@@ -471,6 +471,67 @@ CREATE INDEX IF NOT EXISTS idx_notif_user      ON notifications(user_id, is_read
 CREATE INDEX IF NOT EXISTS idx_audit_entity    ON audit_log(entity, entity_id);
 CREATE INDEX IF NOT EXISTS idx_wf_corr         ON workflow_steps(correspondence_id);
 
+
+-- -----------------------------------------
+--  Report Builder - التقارير المخصصة
+-- -----------------------------------------
+CREATE TABLE IF NOT EXISTS saved_reports (
+    id           TEXT PRIMARY KEY,
+    company_id   TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    description  TEXT,
+    config_json  TEXT NOT NULL,   -- columns, filters, groupby, chart_type
+    is_scheduled INTEGER DEFAULT 0,
+    schedule_cron TEXT,           -- cron expression
+    schedule_emails TEXT,         -- comma-separated emails
+    last_run     TEXT,
+    created_by   TEXT REFERENCES users(id),
+    created_at   TEXT NOT NULL,
+    is_active    INTEGER DEFAULT 1
+);
+
+-- -----------------------------------------
+--  OCR Results - نتائج قراءة المرفقات
+-- -----------------------------------------
+CREATE TABLE IF NOT EXISTS ocr_results (
+    id                TEXT PRIMARY KEY,
+    attachment_id     TEXT NOT NULL,
+    correspondence_id TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
+    company_id        TEXT NOT NULL,
+    extracted_text    TEXT,
+    confidence        REAL DEFAULT 0,
+    engine            TEXT DEFAULT 'claude',  -- claude | tesseract
+    status            TEXT DEFAULT 'pending', -- pending | done | failed
+    created_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ocr_corr ON ocr_results(correspondence_id);
+
+-- -----------------------------------------
+--  Integration Gateway - بوابة التكامل
+-- -----------------------------------------
+CREATE TABLE IF NOT EXISTS integration_configs (
+    id           TEXT PRIMARY KEY,
+    company_id   TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    service_name TEXT NOT NULL,   -- absher | nafidh | custom
+    config_json  TEXT NOT NULL,   -- endpoint, api_key, settings
+    is_active    INTEGER DEFAULT 0,
+    last_sync    TEXT,
+    created_at   TEXT NOT NULL,
+    UNIQUE(company_id, service_name)
+);
+
+CREATE TABLE IF NOT EXISTS integration_logs (
+    id           TEXT PRIMARY KEY,
+    company_id   TEXT NOT NULL,
+    service_name TEXT NOT NULL,
+    action       TEXT NOT NULL,
+    request_json TEXT,
+    response_json TEXT,
+    status       TEXT DEFAULT 'pending',
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_intlog_co ON integration_logs(company_id, service_name);
+
 -- -----------------------------------------
 --  Full-Text Search (FTS5)
 -- -----------------------------------------
@@ -552,17 +613,68 @@ def init_db():
     conn.close()
 
 def _migrate_db(conn):
-    """إضافة أعمدة جديدة للـ DB القديمة دون حذف البيانات"""
-    migrations = [
-        ("ALTER TABLE audit_log ADD COLUMN user_agent TEXT",),
-        ("ALTER TABLE workflow_steps ADD COLUMN due_date TEXT",),
-        ("ALTER TABLE correspondence ADD COLUMN workflow_status TEXT DEFAULT 'none'",),
+    """إضافة أعمدة وجداول جديدة للـ DB القديمة دون حذف البيانات"""
+    # -- أعمدة جديدة --
+    col_migrations = [
+        "ALTER TABLE audit_log ADD COLUMN user_agent TEXT",
+        "ALTER TABLE workflow_steps ADD COLUMN due_date TEXT",
+        "ALTER TABLE correspondence ADD COLUMN workflow_status TEXT DEFAULT 'none'",
     ]
-    for (sql,) in migrations:
+    for sql in col_migrations:
         try:
             conn.execute(sql)
         except Exception:
             pass  # العمود موجود مسبقاً
+
+    # -- جداول جديدة (Session 14+) --
+    new_tables = [
+        """CREATE TABLE IF NOT EXISTS saved_reports (
+            id TEXT PRIMARY KEY, company_id TEXT NOT NULL,
+            name TEXT NOT NULL, description TEXT, config_json TEXT NOT NULL,
+            is_scheduled INTEGER DEFAULT 0, schedule_cron TEXT,
+            schedule_emails TEXT, last_run TEXT,
+            created_by TEXT, created_at TEXT NOT NULL, is_active INTEGER DEFAULT 1)""",
+        """CREATE TABLE IF NOT EXISTS ocr_results (
+            id TEXT PRIMARY KEY, attachment_id TEXT NOT NULL,
+            correspondence_id TEXT NOT NULL, company_id TEXT NOT NULL,
+            extracted_text TEXT, confidence REAL DEFAULT 0,
+            engine TEXT DEFAULT 'claude', status TEXT DEFAULT 'pending',
+            created_at TEXT NOT NULL)""",
+        "CREATE INDEX IF NOT EXISTS idx_ocr_corr ON ocr_results(correspondence_id)",
+        """CREATE TABLE IF NOT EXISTS integration_configs (
+            id TEXT PRIMARY KEY, company_id TEXT NOT NULL,
+            service_name TEXT NOT NULL, config_json TEXT NOT NULL,
+            is_active INTEGER DEFAULT 0, last_sync TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE(company_id, service_name))""",
+        """CREATE TABLE IF NOT EXISTS integration_logs (
+            id TEXT PRIMARY KEY, company_id TEXT NOT NULL,
+            service_name TEXT NOT NULL, action TEXT NOT NULL,
+            request_json TEXT, response_json TEXT,
+            status TEXT DEFAULT 'pending', created_at TEXT NOT NULL)""",
+        "CREATE INDEX IF NOT EXISTS idx_intlog_co ON integration_logs(company_id, service_name)",
+        """CREATE TABLE IF NOT EXISTS user_signatures (
+            id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+            company_id TEXT NOT NULL, sig_data TEXT NOT NULL,
+            sig_type TEXT DEFAULT 'drawn', is_active INTEGER DEFAULT 1,
+            created_at TEXT NOT NULL, updated_at TEXT)""",
+        """CREATE TABLE IF NOT EXISTS correspondence_signatures (
+            id TEXT PRIMARY KEY, correspondence_id TEXT NOT NULL,
+            user_id TEXT NOT NULL, sig_data TEXT NOT NULL,
+            signed_at TEXT NOT NULL, sign_role TEXT,
+            page_number INTEGER DEFAULT 1,
+            x_pos REAL DEFAULT 0.7, y_pos REAL DEFAULT 0.1)""",
+        "CREATE INDEX IF NOT EXISTS idx_corr_sigs ON correspondence_signatures(correspondence_id)",
+        """CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+            subscription_json TEXT NOT NULL, created_at TEXT NOT NULL,
+            UNIQUE(user_id))""",
+    ]
+    for sql in new_tables:
+        try:
+            conn.execute(sql)
+        except Exception:
+            pass  # الجدول موجود مسبقاً
 
 def _populate_fts(conn):
     """ملء فهرس FTS بالبيانات الحالية (عند أول تشغيل أو بعد migration)"""
