@@ -105,6 +105,7 @@ function copyReply() {
   <a href="{{ url_for('export_pdf', cid=item.id) }}" class="btn btn-outline btn-sm" target="_blank">📄 PDF</a>
           {% if item.status == 'approved' or item.workflow_status == 'approved' %}
           <a href="{{ url_for('export_stamped_pdf', cid=item.id) }}" class="btn btn-mint btn-sm" target="_blank">🔏 PDF معتمد</a>
+    <a href="{{ url_for('export_signed_pdf', cid=item.id) }}" class="btn btn-mint btn-sm" target="_blank">✍️ PDF موقَّع</a>
           {% endif %}
           {% if user_perm >= PERM_MANAGE %}
           <a href="{{ url_for('corr_permissions', cid=item.id) }}" class="btn btn-outline btn-sm">🔐 الصلاحيات</a>
