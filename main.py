@@ -2035,21 +2035,20 @@ def setup_defaults():
     if wf_exists == 0:
         # مسار المراسلة العادية
         wf_id = new_id()
-        conn.execute("""INSERT INTO workflow_definitions
-            (id,company_id,name,description,is_default,is_active,created_at)
-            VALUES (?,?,?,?,1,1,?)""",
-            (wf_id, cid,
-             'مسار المراسلة الرسمية',
-             'إعداد ← رئيس القسم ← الإدارة العليا ← تسجيل وإرسال',
-             now()))
-
         steps_json = json.dumps([
             {'step': 1, 'name': 'إعداد الخطاب',          'role': 'user',    'desc': 'الموظف / المهندس المختص يُعد المسودة'},
             {'step': 2, 'name': 'مراجعة رئيس القسم',     'role': 'manager', 'desc': 'مراجعة صحة المعلومات والتوافق مع سياسة القسم'},
             {'step': 3, 'name': 'اعتماد الإدارة العليا', 'role': 'admin',   'desc': 'اعتماد الصيغة النهائية من المدير العام / مدير المشروع'},
             {'step': 4, 'name': 'التسجيل والإرسال',      'role': 'admin',   'desc': 'إعطاء رقم صادر وتسجيله وإرساله رسمياً'},
         ], ensure_ascii=False)
-        conn.execute("UPDATE workflow_definitions SET steps_json=? WHERE id=?", (steps_json, wf_id))
+        conn.execute("""INSERT INTO workflow_definitions
+            (id,company_id,name,category,steps_json,is_default,is_active,created_at)
+            VALUES (?,?,?,?,?,1,1,?)""",
+            (wf_id, cid,
+             'مسار المراسلة الرسمية',
+             'correspondence',
+             steps_json,
+             now()))
         added_wf = 1
 
     conn.commit()
