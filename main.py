@@ -2194,12 +2194,16 @@ def get_ocr_results(cid):
 @app.route('/reports/builder')
 @login_required
 def report_builder_page():
-    conn    = get_db()
-    saved   = get_saved_reports(conn, session['company_id'])
+    conn = get_db()
+    try:
+        saved = get_saved_reports(conn, session['company_id'])
+        saved = [dict(r) for r in saved]
+    except Exception:
+        saved = []
     conn.close()
     return render_template('report_builder.html',
                            fields=AVAILABLE_FIELDS,
-                           saved_reports=[dict(r) for r in saved])
+                           saved_reports=saved)
 
 
 @app.route('/reports/builder/run', methods=['POST'])
@@ -2207,8 +2211,12 @@ def report_builder_page():
 def report_run():
     conn   = get_db()
     config = request.json or {}
-    result = run_report(conn, session['company_id'], config)
-    chart  = get_chart_data(result)
+    try:
+        result = run_report(conn, session['company_id'], config)
+        chart  = get_chart_data(result)
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)}), 500
     conn.close()
     return jsonify({'result': result, 'chart': chart})
 
@@ -2302,8 +2310,11 @@ def report_delete_saved(rid):
 @app.route('/integrations')
 @manager_required
 def integrations_page():
-    conn  = get_db()
-    items = get_all_integrations(conn, session['company_id'])
+    conn = get_db()
+    try:
+        items = get_all_integrations(conn, session['company_id'])
+    except Exception:
+        items = []
     conn.close()
     return render_template('integrations.html', integrations=items, services=SERVICES)
 
@@ -3213,13 +3224,40 @@ def _startup():
         init_db()
     except Exception as e:
         import logging
-        logging.warning(f'init_db skipped: {e}')
+        logging.warning(f'init_db error: {e}')
+    # Force-create any missing tables (for existing Railway DB)
+    try:
+        _force_migrate()
+    except Exception as e:
+        import logging
+        logging.warning(f'force_migrate error: {e}')
     try:
         global _scheduler
         _scheduler = start_scheduler(app)
     except Exception as e:
         import logging
         logging.warning(f'Scheduler skipped: {e}')
+
+def _force_migrate():
+    """إنشاء الجداول الجديدة في DB القديمة على Railway"""
+    conn = get_db()
+    stmts = [
+        "CREATE TABLE IF NOT EXISTS saved_reports (id TEXT PRIMARY KEY, company_id TEXT NOT NULL, name TEXT NOT NULL, description TEXT, config_json TEXT NOT NULL, is_scheduled INTEGER DEFAULT 0, schedule_cron TEXT, schedule_emails TEXT, last_run TEXT, created_by TEXT, created_at TEXT NOT NULL, is_active INTEGER DEFAULT 1)",
+        "CREATE TABLE IF NOT EXISTS ocr_results (id TEXT PRIMARY KEY, attachment_id TEXT NOT NULL, correspondence_id TEXT NOT NULL, company_id TEXT NOT NULL, extracted_text TEXT, confidence REAL DEFAULT 0, engine TEXT DEFAULT 'claude', status TEXT DEFAULT 'pending', created_at TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_ocr_corr ON ocr_results(correspondence_id)",
+        "CREATE TABLE IF NOT EXISTS integration_configs (id TEXT PRIMARY KEY, company_id TEXT NOT NULL, service_name TEXT NOT NULL, config_json TEXT NOT NULL, is_active INTEGER DEFAULT 0, last_sync TEXT, created_at TEXT NOT NULL, UNIQUE(company_id, service_name))",
+        "CREATE TABLE IF NOT EXISTS integration_logs (id TEXT PRIMARY KEY, company_id TEXT NOT NULL, service_name TEXT NOT NULL, action TEXT NOT NULL, request_json TEXT, response_json TEXT, status TEXT DEFAULT 'pending', created_at TEXT NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_intlog_co ON integration_logs(company_id, service_name)",
+        "CREATE TABLE IF NOT EXISTS user_signatures (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, company_id TEXT NOT NULL, sig_data TEXT NOT NULL, sig_type TEXT DEFAULT 'drawn', is_active INTEGER DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT)",
+        "CREATE TABLE IF NOT EXISTS correspondence_signatures (id TEXT PRIMARY KEY, correspondence_id TEXT NOT NULL, user_id TEXT NOT NULL, sig_data TEXT NOT NULL, signed_at TEXT NOT NULL, sign_role TEXT, page_number INTEGER DEFAULT 1, x_pos REAL DEFAULT 0.7, y_pos REAL DEFAULT 0.1)",
+        "CREATE INDEX IF NOT EXISTS idx_corr_sigs ON correspondence_signatures(correspondence_id)",
+        "CREATE TABLE IF NOT EXISTS push_subscriptions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, subscription_json TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(user_id))",
+    ]
+    for sql in stmts:
+        try: conn.execute(sql)
+        except Exception: pass
+    conn.commit()
+    conn.close()
 
 with app.app_context():
     _startup()
