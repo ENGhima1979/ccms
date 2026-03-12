@@ -3,7 +3,7 @@ CCMS — Corporate Communication Management System
 نظام إدارة الاتصالات الإدارية المتكامل
 Flask Application — Professional Edition 2.0
 """
-import os, sys
+import os, sys, json
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import (Flask, render_template, request, redirect, url_for,
@@ -101,6 +101,20 @@ def inject_globals():
     }
 
 # ── Template filters ──────────────────────────────────
+@app.template_filter('fromjson_sub')
+def fromjson_sub(v):
+    """Parse settings_json and return subscription dict"""
+    try:
+        data = json.loads(v) if v else {}
+        return data.get('subscription', {})
+    except:
+        return {}
+
+@app.context_processor
+def inject_today():
+    import datetime
+    return {'today': datetime.date.today().isoformat()}
+
 @app.template_filter('ar_date')
 def ar_date(v):
     if not v: return '—'
@@ -1699,6 +1713,136 @@ def switch_company(company_id):
         session['company_name'] = co['name']
         flash(f'تم التبديل إلى شركة: {co["name"]}', 'info')
     return redirect(url_for('dashboard'))
+
+@app.route('/super-admin/company/<cid>/toggle', methods=['POST'])
+@admin_required
+def toggle_company(cid):
+    """تفعيل/إيقاف شركة"""
+    conn = get_db()
+    co = conn.execute("SELECT * FROM companies WHERE id=?", (cid,)).fetchone()
+    if co:
+        new_status = 0 if co['is_active'] else 1
+        conn.execute("UPDATE companies SET is_active=? WHERE id=?", (new_status, cid))
+        conn.commit()
+        status_txt = 'تفعيل' if new_status else 'إيقاف'
+        flash(f'✅ تم {status_txt} شركة "{co["name"]}"', 'success')
+    conn.close()
+    return redirect(url_for('super_admin'))
+
+@app.route('/super-admin/company/<cid>/delete', methods=['POST'])
+@admin_required
+def delete_company(cid):
+    """حذف شركة نهائياً"""
+    conn = get_db()
+    co = conn.execute("SELECT * FROM companies WHERE id=?", (cid,)).fetchone()
+    if co and cid != session.get('company_id'):
+        conn.execute("DELETE FROM correspondence WHERE company_id=?", (cid,))
+        conn.execute("DELETE FROM projects WHERE company_id=?", (cid,))
+        conn.execute("DELETE FROM users WHERE company_id=?", (cid,))
+        conn.execute("DELETE FROM contacts WHERE company_id=?", (cid,))
+        conn.execute("DELETE FROM companies WHERE id=?", (cid,))
+        conn.commit()
+        flash(f'✅ تم حذف شركة "{co["name"]}" نهائياً', 'success')
+    else:
+        flash('لا يمكن حذف الشركة الحالية', 'error')
+    conn.close()
+    return redirect(url_for('super_admin'))
+
+@app.route('/super-admin/company/<cid>/subscription', methods=['POST'])
+@admin_required
+def update_subscription(cid):
+    """تحديث بيانات الاشتراك"""
+    conn = get_db()
+    co = conn.execute("SELECT * FROM companies WHERE id=?", (cid,)).fetchone()
+    if co:
+        settings = {}
+        if co['settings_json']:
+            try: settings = json.loads(co['settings_json'])
+            except: pass
+        settings['subscription'] = {
+            'plan': request.form.get('plan', 'starter'),
+            'start_date': request.form.get('start_date', today()),
+            'end_date': request.form.get('end_date', ''),
+            'price': request.form.get('price', ''),
+            'max_users': int(request.form.get('max_users', 10)),
+            'notes': request.form.get('notes', ''),
+            'notify_email': request.form.get('notify_email', co['email'] or ''),
+        }
+        conn.execute("UPDATE companies SET settings_json=? WHERE id=?", (json.dumps(settings), cid))
+        conn.commit()
+        # Send notification email if requested
+        if request.form.get('send_notification'):
+            try:
+                _send_subscription_email(co, settings['subscription'])
+                flash('✅ تم تحديث الاشتراك وإرسال البريد الإلكتروني', 'success')
+            except Exception as e:
+                flash(f'✅ تم تحديث الاشتراك (البريد: {str(e)})', 'warning')
+        else:
+            flash('✅ تم تحديث بيانات الاشتراك', 'success')
+    conn.close()
+    return redirect(url_for('super_admin'))
+
+def _send_subscription_email(co, sub):
+    """إرسال بريد تنبيه الاشتراك"""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    notify_email = sub.get('notify_email') or co['email']
+    if not notify_email:
+        return
+    plan_names = {'starter': 'Starter (حتى 10 مستخدمين)', 'business': 'Business (حتى 50 مستخدماً)', 'enterprise': 'Enterprise'}
+    plan = plan_names.get(sub.get('plan',''), sub.get('plan',''))
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = f'CCMS — معلومات اشتراكك | {co["name"]}'
+    msg['From'] = 'noreply@ccms.app'
+    msg['To'] = notify_email
+    html = f"""
+    <div dir="rtl" style="font-family:Cairo,Arial;background:#030b1f;color:#e2f0fb;padding:30px;border-radius:12px">
+      <h2 style="color:#00b4d8">نظام إدارة الاتصالات الإدارية — CCMS</h2>
+      <h3>مرحباً بكم، {co['name']}</h3>
+      <table style="width:100%;border-collapse:collapse;margin:20px 0">
+        <tr style="background:#0a1628"><td style="padding:10px;border:1px solid #1e3a5f">الباقة</td><td style="padding:10px;border:1px solid #1e3a5f;color:#06ffa5">{plan}</td></tr>
+        <tr><td style="padding:10px;border:1px solid #1e3a5f">تاريخ الانتهاء</td><td style="padding:10px;border:1px solid #1e3a5f;color:#ffd60a">{sub.get('end_date','—')}</td></tr>
+        <tr style="background:#0a1628"><td style="padding:10px;border:1px solid #1e3a5f">الحد الأقصى للمستخدمين</td><td style="padding:10px;border:1px solid #1e3a5f">{sub.get('max_users','—')}</td></tr>
+        <tr><td style="padding:10px;border:1px solid #1e3a5f">الرسوم الشهرية</td><td style="padding:10px;border:1px solid #1e3a5f">{sub.get('price','—')} ريال</td></tr>
+      </table>
+      <p style="color:#4a7fa5;font-size:13px">للاستفسار أو التجديد يرجى التواصل مع مزود الخدمة</p>
+    </div>"""
+    msg.attach(MIMEText(html, 'html'))
+    # Use app SMTP if configured
+    smtp_host = os.environ.get('SMTP_HOST','smtp.gmail.com')
+    smtp_port = int(os.environ.get('SMTP_PORT', 587))
+    smtp_user = os.environ.get('SMTP_USER','')
+    smtp_pass = os.environ.get('SMTP_PASS','')
+    if smtp_user and smtp_pass:
+        with smtplib.SMTP(smtp_host, smtp_port) as s:
+            s.starttls()
+            s.login(smtp_user, smtp_pass)
+            s.send_message(msg)
+
+@app.route('/super-admin/check-subscriptions')
+@admin_required
+def check_subscriptions():
+    """فحص الاشتراكات المنتهية قريباً"""
+    import datetime
+    conn = get_db()
+    companies = conn.execute("SELECT * FROM companies WHERE is_active=1").fetchall()
+    conn.close()
+    warnings = []
+    today_date = datetime.date.today()
+    for co in companies:
+        if not co['settings_json']: continue
+        try:
+            settings = json.loads(co['settings_json'])
+            sub = settings.get('subscription', {})
+            end_date_str = sub.get('end_date','')
+            if end_date_str:
+                end_date = datetime.date.fromisoformat(end_date_str)
+                days_left = (end_date - today_date).days
+                if days_left <= 30:
+                    warnings.append({'company': co['name'], 'days_left': days_left, 'end_date': end_date_str})
+        except: pass
+    return jsonify({'warnings': warnings, 'count': len(warnings)})
 
 # ─── Email Ingestion ──────────────────────────────────
 @app.route('/email-ingestion')
