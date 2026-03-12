@@ -2191,19 +2191,68 @@ def get_ocr_results(cid):
 #  REPORT BUILDER -- منشئ التقارير المخصصة
 # ======================================================
 
+@app.route('/debug/tables')
+@login_required
+def debug_tables():
+    """مؤقت: فحص حالة DB على Railway"""
+    import traceback
+    conn = get_db()
+    results = {}
+    tables = ['correspondence','companies','users','saved_reports',
+              'ocr_results','integration_configs','integration_logs',
+              'user_signatures','correspondence_signatures']
+    for t in tables:
+        try:
+            c = conn.execute(f'SELECT COUNT(*) as n FROM {t}').fetchone()
+            results[t] = f'OK ({c["n"]} rows)'
+        except Exception as e:
+            results[t] = f'ERROR: {e}'
+    
+    # Check imports
+    try:
+        from report_builder import AVAILABLE_FIELDS, run_report
+        results['report_builder_import'] = f'OK ({len(AVAILABLE_FIELDS)} fields)'
+    except Exception as e:
+        results['report_builder_import'] = f'ERROR: {e}'
+    
+    try:
+        from report_builder import get_saved_reports
+        saved = get_saved_reports(conn, session['company_id'])
+        results['get_saved_reports'] = f'OK ({len(saved)} saved)'
+    except Exception as e:
+        results['get_saved_reports'] = f'ERROR: {e}\n{traceback.format_exc()}'
+    
+    conn.close()
+    html = '<h2>DB Debug</h2><table border=1 style="direction:ltr">'
+    for k, v in results.items():
+        color = 'red' if 'ERROR' in str(v) else 'green'
+        html += f'<tr><td>{k}</td><td style="color:{color}">{v}</td></tr>'
+    html += '</table>'
+    return html
+
+
 @app.route('/reports/builder')
 @login_required
 def report_builder_page():
+    import traceback
     conn = get_db()
     try:
         saved = get_saved_reports(conn, session['company_id'])
         saved = [dict(r) for r in saved]
-    except Exception:
+    except Exception as e:
+        app.logger.error(f'[REPORT] get_saved_reports error: {e}\n{traceback.format_exc()}')
         saved = []
-    conn.close()
-    return render_template('report_builder.html',
-                           fields=AVAILABLE_FIELDS,
-                           saved_reports=saved)
+    try:
+        conn.close()
+    except Exception:
+        pass
+    try:
+        return render_template('report_builder.html',
+                               fields=AVAILABLE_FIELDS,
+                               saved_reports=saved)
+    except Exception as e:
+        app.logger.error(f'[REPORT] render_template error: {e}\n{traceback.format_exc()}')
+        return f"<pre>TEMPLATE ERROR:\n{traceback.format_exc()}</pre>", 500
 
 
 @app.route('/reports/builder/run', methods=['POST'])
