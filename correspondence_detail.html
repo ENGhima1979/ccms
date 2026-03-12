@@ -77,12 +77,38 @@ function copyReply() {
 }
 </script>
 
+
+    <!-- Audit Trail للمراسلة -->
+    {% if audit_entries %}
+    <div class="panel">
+      <div class="panel-header"><div class="panel-title">🔍 سجل التدقيق</div></div>
+      <div class="panel-body" style="padding:0">
+        <div style="max-height:200px;overflow-y:auto">
+          {% for log in audit_entries %}
+          <div style="display:flex;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border);font-size:12px">
+            <span style="color:var(--text3);white-space:nowrap">{{ log.created_at[:16].replace('T',' ') }}</span>
+            <span style="color:var(--sky);min-width:80px">{{ log.full_name or log.username }}</span>
+            <span style="color:var(--text2)">{{ log.action|replace('CORR_','') }}</span>
+            <span style="color:var(--text3);font-family:monospace">{{ log.ip_address }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
 {% endblock %}
 {% block page_title %}📋 {{ item.ref_num }}{% endblock %}
 {% block page_sub %}{{ item.subject[:60] }}{% endblock %}
 {% block header_actions %}
   <a href="{{ url_for('edit_correspondence', cid=item.id) }}" class="btn btn-warn btn-sm">✏️ تعديل</a>
   <a href="{{ url_for('export_pdf', cid=item.id) }}" class="btn btn-outline btn-sm" target="_blank">📄 PDF</a>
+          {% if item.status == 'approved' or item.workflow_status == 'approved' %}
+          <a href="{{ url_for('export_stamped_pdf', cid=item.id) }}" class="btn btn-mint btn-sm" target="_blank">🔏 PDF معتمد</a>
+          {% endif %}
+          {% if user_perm >= PERM_MANAGE %}
+          <a href="{{ url_for('corr_permissions', cid=item.id) }}" class="btn btn-outline btn-sm">🔐 الصلاحيات</a>
+          {% endif %}
   {% if not item.archived %}
   <form method="POST" action="{{ url_for('archive_correspondence', cid=item.id) }}" style="display:inline">
     <button class="btn btn-ghost btn-sm">🗄️ أرشفة</button>
