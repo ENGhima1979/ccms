@@ -482,6 +482,11 @@ textarea.form-control{min-height:120px;resize:vertical}
       {% set wf_count = pending_wf %}
       {% if wf_count %}<span class="sb-badge warn">{{ wf_count }}</span>{% endif %}
     </a>
+    {% if is_admin %}
+    <a href="{{ url_for('audit_log_view') }}" class="sb-link {% if request.endpoint=='audit_log_view' %}active{% endif %}">
+      <span class="sb-icon">🔍</span> سجل التدقيق
+    </a>
+    {% endif %}
 
     {# ── إدارة الأعمال (الكل) ── #}
     <div class="sb-section">إدارة الأعمال</div>
