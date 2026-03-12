@@ -111,6 +111,14 @@ def inject_globals():
     }
 
 # ── Template filters ──────────────────────────────────
+@app.template_filter('fromjson_sub_wf')
+def fromjson_sub_wf(v):
+    """Parse steps_json and return list of steps"""
+    try:
+        return json.loads(v) if v else []
+    except:
+        return []
+
 @app.template_filter('fromjson_sub')
 def fromjson_sub(v):
     """Parse settings_json and return subscription dict"""
