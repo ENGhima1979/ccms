@@ -1,0 +1,393 @@
+{% extends 'base.html' %}
+{% block title %}منشئ التقارير{% endblock %}
+{% block page_title %}📊 منشئ التقارير المخصصة{% endblock %}
+{% block page_sub %}اختر الحقول والفلاتر وصدّر بأي تنسيق{% endblock %}
+
+{% block content %}
+<div style="display:grid;grid-template-columns:280px 1fr;gap:20px;align-items:start">
+
+<!-- ═══ الشريط الجانبي ═══ -->
+<div>
+  <!-- الحقول -->
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">📋 الحقول المتاحة</h6></div>
+    <div class="card-body" style="padding:12px;max-height:300px;overflow-y:auto">
+      {% for f in fields %}
+      <div class="field-chip" data-id="{{ f.id }}" data-label="{{ f.label }}"
+           onclick="toggleField(this)"
+           style="display:flex;align-items:center;gap:8px;padding:7px 10px;
+                  border-radius:8px;cursor:pointer;margin-bottom:4px;
+                  background:var(--card2);border:1px solid var(--border);
+                  transition:.15s;user-select:none">
+        <input type="checkbox" class="field-check" style="pointer-events:none">
+        <span style="font-size:13px">{{ f.label }}</span>
+      </div>
+      {% endfor %}
+      <div style="margin-top:8px;display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="selectAll()">الكل</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="clearAll()">مسح</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- الفلاتر -->
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">🔍 الفلاتر</h6></div>
+    <div class="card-body" style="padding:12px">
+      <div style="margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text3)">من تاريخ</label>
+        <input type="date" id="dateFrom" class="form-control" style="margin-top:4px">
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text3)">إلى تاريخ</label>
+        <input type="date" id="dateTo" class="form-control" style="margin-top:4px">
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text3)">النوع</label>
+        <select id="filterType" class="form-select" style="margin-top:4px">
+          <option value="">الكل</option>
+          <option value="out">صادر</option>
+          <option value="in">وارد</option>
+          <option value="internal">داخلي</option>
+        </select>
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text3)">الأولوية</label>
+        <select id="filterPriority" class="form-select" style="margin-top:4px">
+          <option value="">الكل</option>
+          <option value="urgent">عاجل</option>
+          <option value="high">مهم</option>
+          <option value="normal">عادي</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- التجميع والترتيب -->
+  <div class="card mb-3">
+    <div class="card-header"><h6 class="mb-0">⚙️ خيارات</h6></div>
+    <div class="card-body" style="padding:12px">
+      <div style="margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text3)">تجميع حسب</label>
+        <select id="groupBy" class="form-select" style="margin-top:4px">
+          <option value="">بدون تجميع</option>
+          <option value="type">النوع</option>
+          <option value="priority">الأولوية</option>
+          <option value="status">الحالة</option>
+          <option value="reply_status">حالة الرد</option>
+          <option value="category">التصنيف</option>
+        </select>
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text3)">الحد الأقصى</label>
+        <input type="number" id="limitVal" class="form-control" value="200" min="10" max="2000" style="margin-top:4px">
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text3)">نوع الرسم البياني</label>
+        <select id="chartType" class="form-select" style="margin-top:4px">
+          <option value="bar">أعمدة</option>
+          <option value="doughnut">دائري</option>
+          <option value="line">خطي</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- أزرار التشغيل -->
+  <div style="display:flex;flex-direction:column;gap:8px">
+    <button class="btn btn-electric" onclick="runReport()">▶ تشغيل التقرير</button>
+    <button class="btn btn-outline" onclick="openSaveModal()">💾 حفظ التقرير</button>
+  </div>
+</div>
+
+<!-- ═══ منطقة النتائج ═══ -->
+<div>
+  <!-- شريط العمليات -->
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+    <div style="font-size:13px;color:var(--text3)" id="resultSummary">اختر الحقول وشغّل التقرير</div>
+    <div style="margin-right:auto;display:flex;gap:8px" id="exportBtns" style="display:none">
+      <button class="btn btn-ghost btn-sm" onclick="exportReport('excel')">📥 Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="exportReport('pdf')">📄 PDF</button>
+    </div>
+  </div>
+
+  <!-- الرسم البياني -->
+  <div class="card mb-4" id="chartCard" style="display:none">
+    <div class="card-header"><h6 class="mb-0" id="chartTitle">📊 الرسم البياني</h6></div>
+    <div class="card-body" style="padding:20px;max-height:320px">
+      <canvas id="reportChart" style="max-height:280px"></canvas>
+    </div>
+  </div>
+
+  <!-- جدول النتائج -->
+  <div class="card" id="tableCard" style="display:none">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h6 class="mb-0">📋 النتائج</h6>
+      <span id="tableCount" style="font-size:12px;color:var(--text3)"></span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="table" id="resultTable">
+        <thead id="resultHead"></thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- التقارير المحفوظة -->
+  {% if saved_reports %}
+  <div class="card mt-4">
+    <div class="card-header"><h6 class="mb-0">📂 التقارير المحفوظة</h6></div>
+    <div class="card-body" style="padding:0">
+      {% for r in saved_reports %}
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)">
+        <div style="flex:1">
+          <div style="font-size:14px;font-weight:600">{{ r.name }}</div>
+          <div style="font-size:12px;color:var(--text3)">
+            {{ r.creator_name }} · {{ r.created_at[:10] }}
+            {% if r.is_scheduled %}<span style="color:var(--mint)"> · مجدول</span>{% endif %}
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="runSaved('{{ r.id }}','{{ r.name }}')">▶ تشغيل</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)"
+                onclick="deleteSaved('{{ r.id }}')">🗑</button>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+</div>
+
+<!-- ═══ Modal حفظ التقرير ═══ -->
+<div class="modal fade" id="saveModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content" style="background:var(--card);border-color:var(--border)">
+      <div class="modal-header" style="border-color:var(--border)">
+        <h5 class="modal-title">💾 حفظ التقرير</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">اسم التقرير *</label>
+          <input type="text" class="form-control" id="saveReportName" placeholder="مثال: تقرير المراسلات الشهري">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">وصف اختياري</label>
+          <input type="text" class="form-control" id="saveReportDesc">
+        </div>
+        <hr style="border-color:var(--border)">
+        <div class="mb-3">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <input type="checkbox" id="enableSchedule" onchange="toggleSchedule()">
+            <label for="enableSchedule" style="font-size:14px">جدولة تلقائية</label>
+          </div>
+          <div id="scheduleOptions" style="display:none">
+            <div class="mb-3">
+              <label class="form-label" style="font-size:12px">التكرار</label>
+              <select class="form-select" id="scheduleCron">
+                <option value="0 8 * * 1">أسبوعياً (الاثنين 8ص)</option>
+                <option value="0 8 1 * *">شهرياً (الأول 8ص)</option>
+                <option value="0 8 * * *">يومياً (8ص)</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label" style="font-size:12px">إرسال إلى (بريد إلكتروني)</label>
+              <input type="text" class="form-control" id="scheduleEmails" placeholder="email1@co.com, email2@co.com">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--border)">
+        <button class="btn btn-ghost" data-bs-dismiss="modal">إلغاء</button>
+        <button class="btn btn-electric" onclick="saveReport()">💾 حفظ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+let currentResult = null;
+let currentConfig = null;
+let reportChart   = null;
+
+// ── اختيار الحقول ──────────────────────────────────
+function toggleField(el) {
+  const chk = el.querySelector('.field-check');
+  chk.checked = !chk.checked;
+  el.style.background    = chk.checked ? 'rgba(0,180,216,.15)' : 'var(--card2)';
+  el.style.borderColor   = chk.checked ? 'var(--sky)' : 'var(--border)';
+}
+function selectAll() {
+  document.querySelectorAll('.field-chip').forEach(el => {
+    el.querySelector('.field-check').checked = true;
+    el.style.background  = 'rgba(0,180,216,.15)';
+    el.style.borderColor = 'var(--sky)';
+  });
+}
+function clearAll() {
+  document.querySelectorAll('.field-chip').forEach(el => {
+    el.querySelector('.field-check').checked = false;
+    el.style.background  = 'var(--card2)';
+    el.style.borderColor = 'var(--border)';
+  });
+}
+
+// ── بناء config ─────────────────────────────────────
+function buildConfig(reportName='') {
+  const cols = [...document.querySelectorAll('.field-check:checked')]
+                .map(c => c.closest('.field-chip').dataset.id);
+  return {
+    report_name:  reportName,
+    columns:      cols.length ? cols : ['ref_num','date','type','subject','party','priority'],
+    date_from:    document.getElementById('dateFrom').value,
+    date_to:      document.getElementById('dateTo').value,
+    group_by:     document.getElementById('groupBy').value || null,
+    limit:        parseInt(document.getElementById('limitVal').value) || 200,
+    filters: {
+      type:     document.getElementById('filterType').value,
+      priority: document.getElementById('filterPriority').value
+    }
+  };
+}
+
+// ── تشغيل التقرير ────────────────────────────────────
+async function runReport() {
+  document.getElementById('resultSummary').textContent = '⏳ جاري التحميل...';
+  currentConfig = buildConfig();
+  try {
+    const res  = await fetch('/reports/builder/run', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(currentConfig)
+    });
+    const data = await res.json();
+    currentResult = data.result;
+    renderTable(data.result);
+    renderChart(data.chart);
+    document.getElementById('exportBtns').style.display = 'flex';
+  } catch(e) {
+    document.getElementById('resultSummary').textContent = 'خطأ في تحميل التقرير';
+  }
+}
+
+// ── عرض الجدول ───────────────────────────────────────
+function renderTable(result) {
+  const cols   = result.columns;
+  const labels = result.field_labels;
+  let headHtml = '<tr>';
+  cols.forEach(c => { headHtml += `<th>${labels[c]||c}</th>`; });
+  if (result.group_by) headHtml += '<th>العدد</th>';
+  headHtml += '</tr>';
+  document.getElementById('resultHead').innerHTML = headHtml;
+
+  let bodyHtml = '';
+  result.data.forEach(row => {
+    bodyHtml += '<tr>';
+    cols.forEach(c => {
+      const val = row[c+'_label'] || row[c] || '';
+      bodyHtml += `<td style="font-size:13px">${val}</td>`;
+    });
+    if (result.group_by) bodyHtml += `<td style="color:var(--sky);font-weight:700">${row.count_total||''}</td>`;
+    bodyHtml += '</tr>';
+  });
+  document.getElementById('resultBody').innerHTML = bodyHtml;
+  document.getElementById('tableCard').style.display = 'block';
+  document.getElementById('tableCount').textContent  = `${result.total} سجل`;
+  document.getElementById('resultSummary').textContent = `تم تحميل ${result.total} سجل`;
+}
+
+// ── الرسم البياني ─────────────────────────────────────
+function renderChart(chartData) {
+  const type = document.getElementById('chartType').value;
+  chartData.type = type;
+
+  document.getElementById('chartCard').style.display = 'block';
+  const ctx = document.getElementById('reportChart').getContext('2d');
+  if (reportChart) reportChart.destroy();
+
+  reportChart = new Chart(ctx, {
+    type: chartData.type,
+    data: chartData,
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { labels: { color: '#b0bec5' } } },
+      scales: chartData.type === 'doughnut' ? {} : {
+        x: { ticks: { color: '#546e7a' }, grid: { color: '#1a2a3a' } },
+        y: { ticks: { color: '#546e7a' }, grid: { color: '#1a2a3a' } }
+      }
+    }
+  });
+}
+
+// ── تصدير ────────────────────────────────────────────
+async function exportReport(fmt) {
+  if (!currentConfig) return;
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '⏳';
+  try {
+    const res = await fetch(`/reports/builder/export/${fmt}`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(currentConfig)
+    });
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `تقرير.${fmt === 'excel' ? 'xlsx' : 'pdf'}`;
+    a.click();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = fmt === 'excel' ? '📥 Excel' : '📄 PDF';
+  }
+}
+
+// ── حفظ التقرير ──────────────────────────────────────
+function openSaveModal() {
+  if (!currentConfig) { alert('شغّل التقرير أولاً'); return; }
+  new bootstrap.Modal(document.getElementById('saveModal')).show();
+}
+function toggleSchedule() {
+  document.getElementById('scheduleOptions').style.display =
+    document.getElementById('enableSchedule').checked ? '' : 'none';
+}
+async function saveReport() {
+  const name = document.getElementById('saveReportName').value.trim();
+  if (!name) { alert('أدخل اسم التقرير'); return; }
+  const payload = {
+    name, description: document.getElementById('saveReportDesc').value,
+    config: currentConfig,
+    schedule_cron:   document.getElementById('enableSchedule').checked ?
+                     document.getElementById('scheduleCron').value : '',
+    schedule_emails: document.getElementById('scheduleEmails').value,
+  };
+  const res = await fetch('/reports/builder/save', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (data.success) {
+    bootstrap.Modal.getInstance(document.getElementById('saveModal')).hide();
+    alert('✅ تم حفظ التقرير'); location.reload();
+  }
+}
+
+// ── تشغيل محفوظ ──────────────────────────────────────
+async function runSaved(id, name) {
+  document.getElementById('resultSummary').textContent = `⏳ تحميل ${name}...`;
+  const res  = await fetch(`/reports/builder/saved/${id}/run`);
+  const data = await res.json();
+  if (data.result) {
+    currentResult = data.result;
+    currentConfig = JSON.parse('{}');
+    renderTable(data.result);
+    renderChart(data.chart);
+    document.getElementById('exportBtns').style.display = 'flex';
+  }
+}
+async function deleteSaved(id) {
+  if (!confirm('حذف هذا التقرير المحفوظ؟')) return;
+  await fetch(`/reports/builder/saved/${id}/delete`, {method:'POST'});
+  location.reload();
+}
+</script>
+{% endblock %}
