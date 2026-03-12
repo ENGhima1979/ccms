@@ -178,18 +178,26 @@ function copyReply() {
               {% if step.note %}<div class="tl-sub" style="color:var(--warn);margin-top:4px">📝 {{ step.note }}</div>{% endif %}
               {% if step.completed_at %}<div class="tl-sub">{{ step.completed_at[:10]|ar_date }}</div>{% endif %}
 
-              {% if step.status=='pending' and step.assigned_to==current_user.id %}
-              <div style="display:flex;gap:8px;margin-top:10px">
-                <form method="POST" action="{{ url_for('workflow_action', step_id=step.id) }}" style="flex:1">
-                  <input type="hidden" name="action" value="approve">
-                  <textarea name="note" placeholder="ملاحظة (اختياري)" class="form-control" style="min-height:50px;margin-bottom:6px"></textarea>
-                  <button class="btn btn-mint btn-sm" style="width:100%">✅ موافقة</button>
-                </form>
-                <form method="POST" action="{{ url_for('workflow_action', step_id=step.id) }}" style="flex:1">
-                  <input type="hidden" name="action" value="reject">
-                  <textarea name="note" placeholder="سبب الرفض (مطلوب)" class="form-control" style="min-height:50px;margin-bottom:6px"></textarea>
-                  <button class="btn btn-danger btn-sm" style="width:100%">❌ رفض</button>
-                </form>
+              {% if step.status=='pending' and (step.assigned_to==current_user.id or is_admin) %}
+              <div style="margin-top:12px">
+                <textarea id="note_{{ step.id }}" placeholder="ملاحظة (مطلوبة عند الرفض أو الإعادة)" class="form-control" style="min-height:55px;margin-bottom:8px"></textarea>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <form method="POST" action="{{ url_for('workflow_action', step_id=step.id) }}" style="flex:1" onsubmit="copyNote('{{ step.id }}',this)">
+                    <input type="hidden" name="action" value="approve">
+                    <input type="hidden" name="note" class="note-val">
+                    <button class="btn btn-mint btn-sm" style="width:100%">✅ اعتماد</button>
+                  </form>
+                  <form method="POST" action="{{ url_for('workflow_action', step_id=step.id) }}" style="flex:1" onsubmit="copyNote('{{ step.id }}',this)">
+                    <input type="hidden" name="action" value="return">
+                    <input type="hidden" name="note" class="note-val">
+                    <button class="btn btn-warn btn-sm" style="width:100%">↩️ إعادة للتعديل</button>
+                  </form>
+                  <form method="POST" action="{{ url_for('workflow_action', step_id=step.id) }}" style="flex:1" onsubmit="return confirmReject('{{ step.id }}',this)">
+                    <input type="hidden" name="action" value="reject">
+                    <input type="hidden" name="note" class="note-val">
+                    <button class="btn btn-danger btn-sm" style="width:100%">❌ رفض نهائي</button>
+                  </form>
+                </div>
               </div>
               {% endif %}
             </div>
