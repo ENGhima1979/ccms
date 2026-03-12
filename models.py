@@ -32,9 +32,9 @@ def new_id():
 #  SCHEMA — Complete Professional Database
 # ======================================================
 SCHEMA = """
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  شركات / مستأجرون (Multi-tenant ready)
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS companies (
     id            TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
@@ -63,9 +63,9 @@ CREATE TABLE IF NOT EXISTS companies (
     settings_json TEXT DEFAULT '{}'
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  أقسام / إدارات
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS departments (
     id          TEXT PRIMARY KEY,
     company_id  TEXT NOT NULL REFERENCES companies(id),
@@ -79,9 +79,9 @@ CREATE TABLE IF NOT EXISTS departments (
     created_at  TEXT NOT NULL
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  مستخدمون
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS users (
     id              TEXT PRIMARY KEY,
     company_id      TEXT NOT NULL REFERENCES companies(id),
@@ -108,9 +108,9 @@ CREATE TABLE IF NOT EXISTS users (
     UNIQUE(company_id, username)
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  مشاريع
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS projects (
     id              TEXT PRIMARY KEY,
     company_id      TEXT NOT NULL REFERENCES companies(id),
@@ -140,9 +140,9 @@ CREATE TABLE IF NOT EXISTS projects (
     UNIQUE(company_id, code)
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  صلاحيات المستخدم على المشاريع
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS user_projects (
     user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -151,9 +151,9 @@ CREATE TABLE IF NOT EXISTS user_projects (
 );
 
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  صلاحيات المراسلات الدقيقة
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS correspondence_permissions (
     id                  TEXT PRIMARY KEY,
     correspondence_id   TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
@@ -166,9 +166,9 @@ CREATE TABLE IF NOT EXISTS correspondence_permissions (
 CREATE INDEX IF NOT EXISTS idx_corr_perm ON correspondence_permissions(correspondence_id);
 CREATE INDEX IF NOT EXISTS idx_user_perm ON correspondence_permissions(user_id);
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  جهات التواصل الخارجية
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS contacts (
     id            TEXT PRIMARY KEY,
     company_id    TEXT NOT NULL REFERENCES companies(id),
@@ -193,9 +193,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     created_by    TEXT REFERENCES users(id)
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  قوالب الخطابات
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS templates (
     id            TEXT PRIMARY KEY,
     company_id    TEXT NOT NULL REFERENCES companies(id),
@@ -211,9 +211,9 @@ CREATE TABLE IF NOT EXISTS templates (
     created_by    TEXT REFERENCES users(id)
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  تعريفات سير العمل
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS workflow_definitions (
     id            TEXT PRIMARY KEY,
     company_id    TEXT NOT NULL REFERENCES companies(id),
@@ -226,9 +226,9 @@ CREATE TABLE IF NOT EXISTS workflow_definitions (
     created_by    TEXT REFERENCES users(id)
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  المراسلات — الجدول المحوري
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS correspondence (
     id              TEXT PRIMARY KEY,
     company_id      TEXT NOT NULL REFERENCES companies(id),
@@ -275,9 +275,9 @@ CREATE TABLE IF NOT EXISTS correspondence (
     UNIQUE(company_id, ref_num)
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  مراحل سير العمل للمراسلات
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS workflow_steps (
     id                TEXT PRIMARY KEY,
     correspondence_id TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
@@ -295,9 +295,9 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
     created_at        TEXT NOT NULL
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  المرفقات
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS attachments (
     id                TEXT PRIMARY KEY,
     correspondence_id TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
@@ -312,9 +312,9 @@ CREATE TABLE IF NOT EXISTS attachments (
     uploaded_at       TEXT NOT NULL
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  التعليقات والملاحظات الداخلية
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS comments (
     id                TEXT PRIMARY KEY,
     correspondence_id TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
@@ -326,9 +326,9 @@ CREATE TABLE IF NOT EXISTS comments (
     updated_at        TEXT
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  الإشعارات
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS notifications (
     id          TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -341,9 +341,9 @@ CREATE TABLE IF NOT EXISTS notifications (
     read_at     TEXT
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  سجل التدقيق
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS audit_log (
     id          TEXT PRIMARY KEY,
     company_id  TEXT,
@@ -359,9 +359,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at  TEXT NOT NULL
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  SLA (مستويات خدمة الاستجابة)
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS sla_rules (
     id          TEXT PRIMARY KEY,
     company_id  TEXT NOT NULL REFERENCES companies(id),
@@ -374,9 +374,9 @@ CREATE TABLE IF NOT EXISTS sla_rules (
     created_at  TEXT NOT NULL
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  التفويضات المؤقتة
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS delegations (
     id            TEXT PRIMARY KEY,
     from_user_id  TEXT NOT NULL REFERENCES users(id),
@@ -388,13 +388,13 @@ CREATE TABLE IF NOT EXISTS delegations (
     created_at    TEXT NOT NULL
 );
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  Indexes للأداء
--- ─────────────────────────────────────────
+-- -----------------------------------------
 
--- ═══════════════════════════════════════════════════════
+-- =======================================================
 --  المرحلة الثانية — جداول الذكاء الاصطناعي والإشعارات
--- ═══════════════════════════════════════════════════════
+-- =======================================================
 
 -- تحليلات الذكاء الاصطناعي للمراسلات
 CREATE TABLE IF NOT EXISTS ai_analysis (
@@ -471,9 +471,9 @@ CREATE INDEX IF NOT EXISTS idx_notif_user      ON notifications(user_id, is_read
 CREATE INDEX IF NOT EXISTS idx_audit_entity    ON audit_log(entity, entity_id);
 CREATE INDEX IF NOT EXISTS idx_wf_corr         ON workflow_steps(correspondence_id);
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  Full-Text Search (FTS5)
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE VIRTUAL TABLE IF NOT EXISTS corr_fts USING fts5(
     correspondence_id UNINDEXED,
     ref_num,
@@ -501,9 +501,9 @@ CREATE TRIGGER IF NOT EXISTS corr_fts_delete AFTER DELETE ON correspondence BEGI
     DELETE FROM corr_fts WHERE correspondence_id = old.id;
 END;
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  التوقيعات الرقمية للمستخدمين
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS user_signatures (
     id          TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -529,9 +529,9 @@ CREATE TABLE IF NOT EXISTS correspondence_signatures (
 );
 CREATE INDEX IF NOT EXISTS idx_corr_sigs ON correspondence_signatures(correspondence_id);
 
--- ─────────────────────────────────────────
+-- -----------------------------------------
 --  Push Notification Subscriptions
--- ─────────────────────────────────────────
+-- -----------------------------------------
 CREATE TABLE IF NOT EXISTS push_subscriptions (
     id                TEXT PRIMARY KEY,
     user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

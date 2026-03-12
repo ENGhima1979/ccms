@@ -16,7 +16,7 @@ from models import get_db
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
-# ── Auth helpers ──────────────────────────────────────
+# -- Auth helpers --------------------------------------
 def get_user_project_ids():
     if session.get('role') in ('super_admin','admin') or session.get('all_projects'):
         return None
@@ -84,7 +84,7 @@ def create_notification(user_id, type_, title, body=None, link=None, conn=None):
                   datetime.datetime.now().isoformat(timespec='seconds')))
     if close: conn.commit(); conn.close()
 
-# ── PDF Generation ────────────────────────────────────
+# -- PDF Generation ------------------------------------
 def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True):
     """Generate professional Arabic PDF - uses bundled font, no external dependencies"""
     import os, sys
@@ -135,7 +135,7 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     co_addr   = company.get('address','')
     co_cr     = company.get('cr_number','')
     
-    # ─── HEADER ──────────────────────────────────────────
+    # --- HEADER ------------------------------------------
     hdr_left = Paragraph(f"<b>{ar(co_name)}</b>", 
                 ParagraphStyle('hl', fontName=afb, fontSize=16, alignment=TA_RIGHT,
                                textColor=primary, leading=22))
@@ -156,7 +156,7 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     story.append(hdr)
     story.append(Spacer(1, 0.4*cm))
 
-    # ─── REFERENCE BAR ──────────────────────────────────
+    # --- REFERENCE BAR ----------------------------------
     priority_map = {'urgent':'⚡ عاجل','high':'▲ عالية','normal':'● عادية','low':'▽ منخفضة'}
     type_map     = {'out':'صادر','in':'وارد','internal':'داخلي'}
     
@@ -182,14 +182,14 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     story.append(ref_t)
     story.append(Spacer(1, 0.5*cm))
 
-    # ─── RECIPIENT ──────────────────────────────────────
+    # --- RECIPIENT --------------------------------------
     story.append(Paragraph(f"{ar('السادة')} / <b>{ar(corr.get('party',''))}</b>", s_body))
     story.append(Paragraph(ar('المحترمين'), s_body))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(ar('السلام عليكم ورحمة الله وبركاته،،،'), s_body))
     story.append(Spacer(1, 0.3*cm))
 
-    # ─── SUBJECT ────────────────────────────────────────
+    # --- SUBJECT ----------------------------------------
     story.append(HRFlowable(width="100%", thickness=0.5, color=primary))
     story.append(Spacer(1, 0.2*cm))
     story.append(Paragraph(f"{ar('الموضوع')}: <b>{ar(corr.get('subject',''))}</b>", s_subj))
@@ -197,7 +197,7 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     story.append(HRFlowable(width="100%", thickness=0.5, color=primary))
     story.append(Spacer(1, 0.5*cm))
 
-    # ─── BODY ────────────────────────────────────────────
+    # --- BODY --------------------------------------------
     body_text = corr.get('body','') or ''
     for para in body_text.split('\n'):
         if para.strip():
@@ -208,7 +208,7 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     story.append(Paragraph(ar('وتفضلوا بقبول فائق الاحترام والتقدير،،،'), s_body))
     story.append(Spacer(1, 1.2*cm))
 
-    # ─── SIGNATURE ──────────────────────────────────────
+    # --- SIGNATURE --------------------------------------
     sig_lines = [ar(co_name)]
     if corr.get('sender_name'):
         sig_lines.append(ar(corr['sender_name']))
@@ -224,7 +224,7 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     ]))
     story.append(sig_t)
 
-    # ─── ATTACHMENTS ─────────────────────────────────────
+    # --- ATTACHMENTS -------------------------------------
     if attachments:
         story.append(Spacer(1, 0.8*cm))
         att_rows = [[Paragraph(f"<b>المرفقات ({len(attachments)})</b>",
@@ -239,7 +239,7 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
         ]))
         story.append(att_t)
 
-    # ─── FOOTER LINE ─────────────────────────────────────
+    # --- FOOTER LINE -------------------------------------
     story.append(Spacer(1, 0.5*cm))
     story.append(HRFlowable(width="100%", thickness=0.3, color=colors.lightgrey))
     story.append(Paragraph(

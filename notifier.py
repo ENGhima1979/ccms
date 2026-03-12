@@ -7,7 +7,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from models import get_db, new_id, now
 
-# ─── البريد الإلكتروني ────────────────────────────────
+# --- البريد الإلكتروني --------------------------------
 def send_email(settings, to_email, to_name, subject, body_html, body_text=None):
     """إرسال بريد إلكتروني عبر SMTP"""
     msg = MIMEMultipart('alternative')
@@ -33,7 +33,7 @@ def send_email(settings, to_email, to_name, subject, body_html, body_text=None):
     except Exception as e:
         return False, str(e)
 
-# ─── واتساب ──────────────────────────────────────────
+# --- واتساب ------------------------------------------
 def send_whatsapp(settings, to_phone, message):
     """إرسال رسالة واتساب عبر WhatsApp Cloud API"""
     api_url   = settings.get('whatsapp_api_url','').rstrip('/')
@@ -69,7 +69,7 @@ def send_whatsapp(settings, to_phone, message):
     except Exception as e:
         return False, str(e)
 
-# ─── إرسال مع تسجيل ──────────────────────────────────
+# --- إرسال مع تسجيل ----------------------------------
 def notify(company_id, user_id, channel, recipient, subject, body, settings):
     """إرسال إشعار وتسجيله"""
     conn = get_db()
@@ -101,7 +101,7 @@ def get_company_notification_settings(company_id):
     conn.close()
     return dict(s) if s else {}
 
-# ─── قوالب رسائل الإشعار ─────────────────────────────
+# --- قوالب رسائل الإشعار -----------------------------
 def build_email_html(title, body_lines, action_url=None, action_label=None, color='#00b4d8'):
     lines_html = ''.join(f'<p style="margin:6px 0;font-size:15px;">{l}</p>' for l in body_lines)
     btn = f'<a href="{action_url}" style="display:inline-block;margin-top:18px;padding:10px 28px;background:{color};color:#fff;text-decoration:none;border-radius:6px;font-size:15px;">{action_label}</a>' if action_url else ''

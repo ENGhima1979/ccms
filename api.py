@@ -9,7 +9,7 @@ from models import get_db, new_id, now, today
 
 api = Blueprint('api', __name__, url_prefix='/api/v1')
 
-# ─── API Key Auth ─────────────────────────────────────
+# --- API Key Auth -------------------------------------
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -41,12 +41,12 @@ def paginate(query_result, page, per_page=20):
         }
     }
 
-# ─── Health Check ─────────────────────────────────────
+# --- Health Check -------------------------------------
 @api.route('/health')
 def health():
     return jsonify({'status': 'ok', 'version': '3.0', 'system': 'CCMS'})
 
-# ─── Correspondence ───────────────────────────────────
+# --- Correspondence -----------------------------------
 @api.route('/correspondence', methods=['GET'])
 @require_api_key
 def api_list_correspondence():
@@ -160,7 +160,7 @@ def api_update_correspondence(cid):
     conn.close()
     return jsonify({'success': True, 'updated': list(updates.keys())})
 
-# ─── Projects ─────────────────────────────────────────
+# --- Projects -----------------------------------------
 @api.route('/projects', methods=['GET'])
 @require_api_key
 def api_projects():
@@ -170,7 +170,7 @@ def api_projects():
     conn.close()
     return jsonify({'success': True, 'data': [dict(r) for r in rows]})
 
-# ─── Contacts ─────────────────────────────────────────
+# --- Contacts -----------------------------------------
 @api.route('/contacts', methods=['GET'])
 @require_api_key
 def api_contacts():
@@ -185,7 +185,7 @@ def api_contacts():
     conn.close()
     return jsonify({'success': True, 'data': [dict(r) for r in rows]})
 
-# ─── Stats ────────────────────────────────────────────
+# --- Stats --------------------------------------------
 @api.route('/stats', methods=['GET'])
 @require_api_key
 def api_stats():
@@ -203,7 +203,7 @@ def api_stats():
     conn.close()
     return jsonify({'success': True, 'data': stats})
 
-# ─── Generate API Key for user ────────────────────────
+# --- Generate API Key for user ------------------------
 def generate_api_key_for_user(user_id):
     key = 'ccms_' + secrets.token_urlsafe(32)
     conn = get_db()

@@ -35,7 +35,7 @@ from helpers import (get_user_project_ids, get_visible_projects,
                      get_pending_workflow_count, create_notification,
                      generate_letter_pdf, generate_excel_report, generate_qr_svg)
 
-# ── App ──────────────────────────────────────────────
+# -- App ----------------------------------------------
 app = Flask(__name__, template_folder='templates', static_folder='static')
 import os as _os
 app.secret_key = _os.environ.get('SECRET_KEY', 'ccms-professional-2025-ibrahim-secure')
@@ -55,9 +55,9 @@ def save_file(f, prefix='file'):
     f.save(os.path.join(UPLOAD_FOLDER, fn))
     return fn, os.path.getsize(os.path.join(UPLOAD_FOLDER, fn))
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  AUTH DECORATORS
-# ══════════════════════════════════════════════════════
+# ======================================================
 def login_required(f):
     @wraps(f)
     def d(*a,**k):
@@ -95,7 +95,7 @@ def super_admin_required(f):
         return f(*a,**k)
     return d
 
-# ── Context processor ─────────────────────────────────
+# -- Context processor ---------------------------------
 @app.context_processor
 def inject_globals():
     if 'user_id' not in session:
@@ -120,7 +120,7 @@ def inject_globals():
         'today':      __import__('datetime').date.today,
     }
 
-# ── Template filters ──────────────────────────────────
+# -- Template filters ----------------------------------
 @app.template_filter('fromjson_sub_wf')
 def fromjson_sub_wf(v):
     """Parse steps_json and return list of steps"""
@@ -199,9 +199,9 @@ def reply_label(v):
             'overdue':'متأخر'}.get(v,v)
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  AUTH
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/login', methods=['GET','POST'])
 def login():
     if 'user_id' in session: return redirect(url_for('dashboard'))
@@ -255,9 +255,9 @@ def logout():
     return redirect(url_for('login'))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  DASHBOARD
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/')
 @login_required
 def dashboard():
@@ -341,9 +341,9 @@ def ar_month(m):
             'يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'][m]
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  CORRESPONDENCE — List / Create / View / Edit
-# ══════════════════════════════════════════════════════
+# ======================================================
 def _corr_query(type_filter=None, archived=0):
     conn = get_db()
     cid  = session['company_id']
@@ -712,9 +712,9 @@ def unarchive_correspondence(cid):
     return redirect(url_for('archive'))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  WORKFLOW ACTIONS
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/workflow/<step_id>/action', methods=['POST'])
 @login_required
 def workflow_action(step_id):
@@ -730,7 +730,7 @@ def workflow_action(step_id):
     corr_id = step['correspondence_id']
     corr    = conn.execute("SELECT * FROM correspondence WHERE id=?", (corr_id,)).fetchone()
 
-    # ── تحقق أن المستخدم هو المسؤول عن هذه الخطوة ──
+    # -- تحقق أن المستخدم هو المسؤول عن هذه الخطوة --
     if step['assigned_to'] and step['assigned_to'] != session['user_id']:
         # السماح للـ admin بالتصرف نيابةً
         if session.get('role') not in ('admin','super_admin'):
@@ -738,13 +738,13 @@ def workflow_action(step_id):
             conn.close()
             return redirect(url_for('view_correspondence', cid=corr_id))
 
-    # ── تسجيل إجراء الخطوة الحالية ──
+    # -- تسجيل إجراء الخطوة الحالية --
     step_status = 'approved' if action=='approve' else ('rejected' if action=='reject' else 'returned')
     conn.execute("""UPDATE workflow_steps
         SET status=?,completed_at=?,completed_by=?,note=? WHERE id=?""",
         (step_status, now(), session['user_id'], note, step_id))
 
-    # ── تسجيل في Audit Trail ──
+    # -- تسجيل في Audit Trail --
     action_label = {'approve':'اعتمد','reject':'رفض','return':'أعاد للمراجعة'}.get(action,action)
     conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,entity,entity_id,new_value,created_at)
         VALUES (?,?,?,?,?,?,?,?,?)""",
@@ -755,7 +755,7 @@ def workflow_action(step_id):
          now()))
 
     if action == 'reject':
-        # ── رفض نهائي: أبلغ المُنشئ ──
+        # -- رفض نهائي: أبلغ المُنشئ --
         conn.execute("UPDATE correspondence SET workflow_status='rejected',status='draft' WHERE id=?", (corr_id,))
         conn.execute("UPDATE workflow_steps SET status='cancelled' WHERE correspondence_id=? AND status='waiting'", (corr_id,))
         create_notification(corr['created_by'], 'workflow',
@@ -765,7 +765,7 @@ def workflow_action(step_id):
         flash('تم رفض المراسلة وإشعار المُنشئ','warning')
 
     elif action == 'return':
-        # ── إعادة للخطوة الأولى (المُنشئ) للتعديل ──
+        # -- إعادة للخطوة الأولى (المُنشئ) للتعديل --
         conn.execute("UPDATE correspondence SET workflow_status='returned',status='draft' WHERE id=?", (corr_id,))
         conn.execute("UPDATE workflow_steps SET status='cancelled' WHERE correspondence_id=? AND status='waiting'", (corr_id,))
         create_notification(corr['created_by'], 'workflow',
@@ -775,7 +775,7 @@ def workflow_action(step_id):
         flash('تم إرجاع المراسلة للمُنشئ للتعديل','info')
 
     else:
-        # ── موافقة: انتقل للخطوة التالية ──
+        # -- موافقة: انتقل للخطوة التالية --
         next_step = conn.execute("""SELECT * FROM workflow_steps
             WHERE correspondence_id=? AND step_number>? AND status='waiting'
             ORDER BY step_number LIMIT 1""",
@@ -792,7 +792,7 @@ def workflow_action(step_id):
                     url_for('view_correspondence', cid=corr_id), conn)
             flash(f'✅ تمت الموافقة — انتقل إلى: {next_step["step_name"]}','success')
         else:
-            # ── كل الخطوات اكتملت: اعتماد نهائي ──
+            # -- كل الخطوات اكتملت: اعتماد نهائي --
             conn.execute("""UPDATE correspondence SET
                 workflow_status='approved', status='approved',
                 updated_at=? WHERE id=?""", (now(), corr_id))
@@ -905,9 +905,9 @@ def _create_workflow_steps(conn, corr_id, wf_def, company_id, creator_id):
                  (wf_def['id'], corr_id))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  COMMENTS
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/correspondence/<cid>/comment', methods=['POST'])
 @login_required
 def add_comment(cid):
@@ -923,9 +923,9 @@ def add_comment(cid):
     return redirect(url_for('view_correspondence', cid=cid))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  ATTACHMENTS
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/attachment/<att_id>/download')
 @login_required
 def download_attachment(att_id):
@@ -954,9 +954,9 @@ def delete_attachment(att_id):
     return redirect(url_for('view_correspondence', cid=cid))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  ARCHIVE
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/archive')
 @login_required
 def archive():
@@ -978,9 +978,9 @@ def archive():
     return render_template('archive.html', items=items, q=q)
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  PROJECTS
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/projects')
 @login_required
 def projects():
@@ -1087,9 +1087,9 @@ def delete_project(pid):
     return redirect(url_for('projects'))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  CONTACTS (جهات الاتصال)
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/contacts')
 @manager_required
 def contacts():
@@ -1169,9 +1169,9 @@ def edit_contact(ctid):
     return render_template('contact_form.html', form=ct, ctid=ctid)
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  REPORTS & ANALYTICS
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/reports')
 @manager_required
 def reports():
@@ -1312,9 +1312,9 @@ def export_pdf(cid):
 
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  المرحلة الثانية — الذكاء الاصطناعي
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 def get_ai_key(company_id):
     """جلب مفتاح AI من إعدادات الشركة"""
@@ -1367,9 +1367,9 @@ def get_ai_data(cid):
     d['ai_action_items'] = json.loads(d.get('ai_action_items','[]'))
     return jsonify({'exists': True, 'data': d})
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  المرحلة الثانية — الإشعارات الخارجية
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 @app.route('/settings/notifications', methods=['GET','POST'])
 @admin_required
@@ -1500,9 +1500,9 @@ def send_manual_notification():
     ok, err = notify(cid, session['user_id'], channel, recipient, subject, body, settings)
     return jsonify({'success': ok, 'error': err})
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  المرحلة الثانية — التقارير المتقدمة
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 @app.route('/reports/advanced')
 @manager_required
@@ -1591,9 +1591,9 @@ def advanced_reports():
         ai_cats=rows2list(ai_cats),
         heatmap=rows2list(heatmap))
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  USERS
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/users')
 @admin_required
 def users():
@@ -1700,9 +1700,9 @@ def delete_user(uid):
     return redirect(url_for('users'))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  NOTIFICATIONS
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/notifications')
 @login_required
 def notifications():
@@ -1715,9 +1715,9 @@ def notifications():
     return render_template('notifications.html', notifs=notifs)
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  SETTINGS
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/settings', methods=['GET','POST'])
 @admin_required
 def settings():
@@ -1771,9 +1771,9 @@ def settings():
 
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  نظام القوالب المتقدم — Templates
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/templates')
 @manager_required
 def templates_list():
@@ -1878,9 +1878,9 @@ def api_template_preview(tid):
     return jsonify({'body': body, 'subject': subject})
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  FULL-TEXT SEARCH — بحث متقدم
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/search')
 @login_required
 def advanced_search():
@@ -1945,9 +1945,9 @@ def advanced_search():
                            date_from=date_from, date_to=date_to)
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  EXECUTIVE DASHBOARD — داشبورد تنفيذي
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/executive-dashboard')
 @manager_required
 def executive_dashboard():
@@ -1956,7 +1956,7 @@ def executive_dashboard():
     cid  = session['company_id']
     today= datetime.date.today()
 
-    # ── KPIs الأساسية ──────────────────────────────
+    # -- KPIs الأساسية ------------------------------
     all_c = conn.execute("""
         SELECT c.*, u.full_name as creator_name, d.name as dept_name
         FROM correspondence c
@@ -1974,7 +1974,7 @@ def executive_dashboard():
     drafts      = sum(1 for x in all_c if x['status']=='draft')
     urgent      = sum(1 for x in all_c if x['priority']=='urgent')
 
-    # ── متوسط وقت الرد ──────────────────────────────
+    # -- متوسط وقت الرد ------------------------------
     replied = conn.execute("""
         SELECT c.date, c.updated_at FROM correspondence c
         WHERE c.company_id=? AND c.type='in'
@@ -1992,17 +1992,17 @@ def executive_dashboard():
             except: pass
         if diffs: avg_reply_hours = round(sum(diffs)/len(diffs), 1)
 
-    # ── نسبة الإنجاز ────────────────────────────────
+    # -- نسبة الإنجاز --------------------------------
     completion_rate = round((approved / total * 100) if total > 0 else 0, 1)
 
-    # ── SLA compliance ──────────────────────────────
+    # -- SLA compliance ------------------------------
     in_corrs   = [x for x in all_c if x['type']=='in']
     overdue_sla= sum(1 for x in in_corrs
                      if x['reply_status']=='pending' and x['date']
                      and (today - datetime.date.fromisoformat(x['date'][:10])).days > 3)
     sla_rate   = round(((len(in_corrs)-overdue_sla)/len(in_corrs)*100) if in_corrs else 100, 1)
 
-    # ── مقارنة شهرية (6 أشهر) ─────────────────────
+    # -- مقارنة شهرية (6 أشهر) ---------------------
     months_data = []
     for i in range(5,-1,-1):
         d   = (today.replace(day=1) - datetime.timedelta(days=i*28))
@@ -2016,7 +2016,7 @@ def executive_dashboard():
         }
         months_data.append(m)
 
-    # ── أداء الأقسام ────────────────────────────────
+    # -- أداء الأقسام --------------------------------
     dept_stats = {}
     for x in all_c:
         dept = x['dept_name'] or 'غير محدد'
@@ -2033,7 +2033,7 @@ def executive_dashboard():
     for d in dept_list:
         d['rate'] = round(d['approved']/d['total']*100 if d['total'] > 0 else 0, 0)
 
-    # ── توزيع حسب النوع و الأولوية ──────────────────
+    # -- توزيع حسب النوع و الأولوية ------------------
     priority_dist = {
         'urgent': sum(1 for x in all_c if x['priority']=='urgent'),
         'high':   sum(1 for x in all_c if x['priority']=='high'),
@@ -2041,14 +2041,14 @@ def executive_dashboard():
         'low':    sum(1 for x in all_c if x['priority']=='low'),
     }
 
-    # ── أكثر المستخدمين نشاطاً ─────────────────────
+    # -- أكثر المستخدمين نشاطاً ---------------------
     user_activity = {}
     for x in all_c:
         u = x['creator_name'] or 'غير محدد'
         user_activity[u] = user_activity.get(u, 0) + 1
     top_users = sorted(user_activity.items(), key=lambda x: x[1], reverse=True)[:5]
 
-    # ── المراسلات المتأخرة عن SLA ───────────────────
+    # -- المراسلات المتأخرة عن SLA -------------------
     overdue_list = [x for x in all_c
                     if x['type']=='in' and x['reply_status']=='pending' and x['date']
                     and (today - datetime.date.fromisoformat(x['date'][:10])).days > 3][:10]
@@ -2066,7 +2066,7 @@ def executive_dashboard():
         today=today.isoformat())
 
 
-# ── API: scheduler status ──────────────────────────
+# -- API: scheduler status --------------------------
 @app.route('/api/scheduler/status')
 @admin_required
 def scheduler_status():
@@ -2100,9 +2100,9 @@ def scheduler_run_now(job_id):
 
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  MOBILE APP ROUTES — واجهة الجوال
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 @app.route('/mobile')
 @login_required
@@ -2204,7 +2204,7 @@ def push_vapid_key():
     return jsonify({'key': key})
 
 
-# ── Auto-redirect mobile users ──────────────────────
+# -- Auto-redirect mobile users ----------------------
 @app.before_request
 def mobile_redirect():
     """إعادة توجيه مستخدمي الجوال لواجهة الجوال"""
@@ -2219,9 +2219,9 @@ def mobile_redirect():
             return redirect(url_for('mobile_app'))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  DIGITAL SIGNATURE ROUTES — التوقيع الرقمي
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 @app.route('/profile/signature', methods=['GET','POST'])
 @login_required
@@ -2346,7 +2346,7 @@ def export_signed_pdf(cid):
                      mimetype='application/pdf')
 
 
-# ── API: get user signature status ──
+# -- API: get user signature status --
 @app.route('/api/signature/status')
 @login_required
 def api_signature_status():
@@ -2356,9 +2356,9 @@ def api_signature_status():
     return jsonify({'has_signature': bool(sig), 'preview': sig[:100] if sig else None})
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  AUDIT TRAIL — سجل التدقيق
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/audit-log')
 @admin_required
 def audit_log_view():
@@ -2395,9 +2395,9 @@ def audit_log_view():
                            filters={'entity':entity,'user_id':user_filter,'action':action_filter})
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  GRANULAR PERMISSIONS — صلاحيات المراسلات
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/correspondence/<cid>/permissions')
 @login_required
 def corr_permissions(cid):
@@ -2451,9 +2451,9 @@ def revoke_corr_permission(cid, uid):
     return redirect(url_for('corr_permissions', cid=cid))
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  DIGITAL STAMP — الختم الرقمي
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/correspondence/<cid>/export-stamped')
 @login_required
 def export_stamped_pdf(cid):
@@ -2524,9 +2524,9 @@ def verify_document(doc_hash):
     return render_template('verify_document.html', found=found, hash=doc_hash)
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  API — JSON endpoints
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/api/notifications/count')
 @login_required
 def api_notif_count():
@@ -2578,11 +2578,11 @@ def api_dashboard_stats():
     })
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  المرحلة الثالثة — Multi-tenant + API Docs + Email Ingestion
-# ══════════════════════════════════════════════════════
+# ======================================================
 
-# ─── API Documentation ────────────────────────────────
+# --- API Documentation --------------------------------
 @app.route('/api-docs')
 @admin_required
 def api_docs():
@@ -2600,7 +2600,7 @@ def generate_api_key():
     flash('✅ تم إنشاء مفتاح API جديد بنجاح', 'success')
     return redirect(url_for('api_docs'))
 
-# ─── Multi-tenant Admin ───────────────────────────────
+# --- Multi-tenant Admin -------------------------------
 @app.route('/super-admin')
 @super_admin_required
 def super_admin():
@@ -2834,7 +2834,7 @@ def check_subscriptions():
         except: pass
     return jsonify({'warnings': warnings, 'count': len(warnings)})
 
-# ─── Email Ingestion ──────────────────────────────────
+# --- Email Ingestion ----------------------------------
 @app.route('/email-ingestion')
 @admin_required
 def email_ingestion():
@@ -2908,7 +2908,7 @@ def fetch_emails_now():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# ─── Offline Page ─────────────────────────────────────
+# --- Offline Page -------------------------------------
 @app.route('/offline')
 def offline():
     return render_template('offline.html')
@@ -2937,7 +2937,7 @@ button{background:linear-gradient(135deg,#00b4d8,#06ffa5);color:#000;border:none
 
 
 
-# ── Initialize DB + Scheduler on startup (gunicorn) ─
+# -- Initialize DB + Scheduler on startup (gunicorn) -
 def _startup():
     try:
         init_db()
@@ -2967,9 +2967,9 @@ if __name__ == '__main__':
     print("=" * 60)
     app.run(debug=True, host='0.0.0.0', port=5000)
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  SETUP WIZARD — إعداد أولي للشركة
-# ══════════════════════════════════════════════════════
+# ======================================================
 @app.route('/settings/setup-defaults', methods=['POST'])
 @admin_required
 def setup_defaults():
@@ -2977,7 +2977,7 @@ def setup_defaults():
     conn = get_db()
     cid  = session['company_id']
 
-    # ── 1. الأقسام ──────────────────────────────────
+    # -- 1. الأقسام ----------------------------------
     departments = [
         ('الإدارة العليا',        'Executive Management', 'EXEC'),
         ('الموارد البشرية',       'Human Resources',      'HR'),
@@ -3003,7 +3003,7 @@ def setup_defaults():
                 VALUES (?,?,?,?,?,1,?)""", (new_id(),cid,name_ar,name_en,code,now()))
             added_depts += 1
 
-    # ── 2. مستويات SLA ──────────────────────────────
+    # -- 2. مستويات SLA ------------------------------
     sla_exists = conn.execute("SELECT COUNT(*) as c FROM sla_rules WHERE company_id=?", (cid,)).fetchone()['c']
     added_sla = 0
     if sla_exists == 0:
@@ -3019,7 +3019,7 @@ def setup_defaults():
                 VALUES (?,?,?,?,?,1,?)""", (new_id(),cid,name,priority,hours,now()))
             added_sla += 1
 
-    # ── 3. سير العمل الافتراضي ──────────────────────
+    # -- 3. سير العمل الافتراضي ----------------------
     wf_exists = conn.execute("SELECT COUNT(*) as c FROM workflow_definitions WHERE company_id=?", (cid,)).fetchone()['c']
     added_wf = 0
     if wf_exists == 0:

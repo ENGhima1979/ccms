@@ -1,6 +1,6 @@
 """
 security.py — منظومة الأمان المتكاملة لـ CCMS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+--------------------------------------------
 1. Audit Trail    — سجل تدقيق كامل
 2. Permissions    — صلاحيات دقيقة على المراسلات والمشاريع
 3. Digital Stamp  — ختم رقمي على PDF
@@ -11,9 +11,9 @@ from functools import wraps
 from flask import session, request, flash, redirect, url_for, current_app
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  1. AUDIT TRAIL — سجل التدقيق الكامل
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 AUDIT_ACTIONS = {
     # المراسلات
@@ -47,7 +47,7 @@ def log_audit(conn, action, entity=None, entity_id=None,
               old_value=None, new_value=None, details=None):
     """
     تسجيل حدث في سجل التدقيق
-    ────────────────────────────
+    ----------------------------
     action    : رمز الحدث (CORR_CREATE, USER_LOGIN, ...)
     entity    : نوع الكيان (correspondence, user, project, ...)
     entity_id : معرّف الكيان
@@ -107,9 +107,9 @@ def get_audit_log(conn, company_id, entity=None, entity_id=None,
     return conn.execute(sql, params).fetchall()
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  2. GRANULAR PERMISSIONS — صلاحيات دقيقة
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 # مستويات الصلاحية على المراسلة
 PERM_NONE   = 0   # لا صلاحية
@@ -130,7 +130,7 @@ PERM_LABELS = {
 def get_user_corr_permission(conn, user_id, corr_id, company_id):
     """
     احسب صلاحية المستخدم على مراسلة محددة
-    ─────────────────────────────────────────
+    -----------------------------------------
     الأولوية: صلاحية مباشرة > صلاحية المشروع > الدور العام
     """
     # 1. الـ admin و super_admin لهم صلاحية كاملة دائماً
@@ -216,9 +216,9 @@ def get_corr_permissions(conn, corr_id):
     """, (corr_id,)).fetchall()
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  3. DIGITAL STAMP — الختم الرقمي على PDF
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 def generate_document_hash(corr_id, ref_num, subject, company_id):
     """توليد hash فريد للمراسلة كبصمة رقمية"""
@@ -229,7 +229,7 @@ def generate_document_hash(corr_id, ref_num, subject, company_id):
 def add_digital_stamp_to_pdf(pdf_bytes, corr, company, approver_name=None):
     """
     إضافة ختم رقمي احترافي للـ PDF بعد الاعتماد النهائي
-    ────────────────────────────────────────────────────
+    ----------------------------------------------------
     يتضمن:
     - رقم المراسلة + تاريخ الاعتماد
     - اسم المعتمد + hash التحقق
@@ -254,7 +254,7 @@ def add_digital_stamp_to_pdf(pdf_bytes, corr, company, approver_name=None):
         c = canvas.Canvas(stamp_buffer, pagesize=A4)
         w, h = A4
 
-        # ── الختم: مستطيل في أسفل يسار الصفحة ──
+        # -- الختم: مستطيل في أسفل يسار الصفحة --
         x, y = 15*mm, 8*mm
         bw, bh = 85*mm, 28*mm
 
@@ -342,9 +342,9 @@ def verify_document_hash(corr_id, ref_num, subject, company_id, provided_hash):
     return expected == provided_hash.upper()
 
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  DIGITAL SIGNATURE — التوقيع الرقمي الكامل
-# ══════════════════════════════════════════════════════
+# ======================================================
 
 def save_user_signature(conn, user_id, company_id, sig_data, sig_type='drawn'):
     """حفظ توقيع المستخدم"""
@@ -371,7 +371,7 @@ def apply_signature_to_pdf(pdf_bytes, sig_data_b64, signer_name,
                             signer_title='', sign_date='', position='bottom-right'):
     """
     إضافة توقيع خطي + بيانات الموقّع على PDF
-    ────────────────────────────────────────────
+    --------------------------------------------
     sig_data_b64 : صورة التوقيع بـ base64 (PNG من Canvas)
     position     : bottom-right | bottom-left | bottom-center
     """
@@ -389,7 +389,7 @@ def apply_signature_to_pdf(pdf_bytes, sig_data_b64, signer_name,
         sig_buffer = _io.BytesIO()
         c = rl_canvas.Canvas(sig_buffer, pagesize=A4)
 
-        # ── حدد موقع التوقيع ──
+        # -- حدد موقع التوقيع --
         box_w, box_h = 70*mm, 28*mm
         margin = 12*mm
         if position == 'bottom-right':
@@ -400,13 +400,13 @@ def apply_signature_to_pdf(pdf_bytes, sig_data_b64, signer_name,
             x = (w - box_w) / 2
         y = margin
 
-        # ── خلفية الختم ──
+        # -- خلفية الختم --
         c.setFillColor(HexColor('#f8f9ff'))
         c.setStrokeColor(HexColor('#1a237e'))
         c.setLineWidth(1)
         c.roundRect(x, y, box_w, box_h, 2*mm, fill=1, stroke=1)
 
-        # ── صورة التوقيع ──
+        # -- صورة التوقيع --
         try:
             # إزالة header من base64
             if ',' in sig_data_b64:
@@ -421,7 +421,7 @@ def apply_signature_to_pdf(pdf_bytes, sig_data_b64, signer_name,
         except Exception:
             pass  # إذا فشلت الصورة، نكمل بالبيانات النصية فقط
 
-        # ── بيانات الموقّع ──
+        # -- بيانات الموقّع --
         c.setFont('Helvetica-Bold', 7)
         c.setFillColor(HexColor('#1a237e'))
         c.drawString(x + 3*mm, y + 7.5*mm, signer_name[:35])
@@ -431,7 +431,7 @@ def apply_signature_to_pdf(pdf_bytes, sig_data_b64, signer_name,
             c.drawString(x + 3*mm, y + 4.5*mm, signer_title[:40])
         c.drawString(x + 3*mm, y + 1.5*mm, sign_date)
 
-        # ── خط فاصل تحت التوقيع ──
+        # -- خط فاصل تحت التوقيع --
         c.setStrokeColor(HexColor('#1a237e'))
         c.setLineWidth(0.5)
         c.line(x + 3*mm, y + 9.5*mm, x + box_w - 3*mm, y + 9.5*mm)
@@ -439,7 +439,7 @@ def apply_signature_to_pdf(pdf_bytes, sig_data_b64, signer_name,
         c.save()
         sig_layer = sig_buffer.getvalue()
 
-        # ── دمج مع الـ PDF ──
+        # -- دمج مع الـ PDF --
         try:
             from pypdf import PdfWriter, PdfReader
             original = PdfReader(_io.BytesIO(pdf_bytes))
@@ -465,7 +465,7 @@ def add_stamp_and_signature(pdf_bytes, corr, company, approver_name,
                              approver_title='', sig_data_b64=None):
     """
     يجمع التوقيع الخطي + الختم الرقمي في عملية واحدة
-    ────────────────────────────────────────────────────
+    ----------------------------------------------------
     """
     result = pdf_bytes
 
