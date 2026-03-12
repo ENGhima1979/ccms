@@ -474,10 +474,24 @@ CREATE INDEX IF NOT EXISTS idx_wf_corr         ON workflow_steps(correspondence_
 def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
+    _migrate_db(conn)      # أضف أعمدة ناقصة في DB القديمة
     _seed_defaults(conn)
     _populate_fts(conn)
     conn.commit()
     conn.close()
+
+def _migrate_db(conn):
+    """إضافة أعمدة جديدة للـ DB القديمة دون حذف البيانات"""
+    migrations = [
+        ("ALTER TABLE audit_log ADD COLUMN user_agent TEXT",),
+        ("ALTER TABLE workflow_steps ADD COLUMN due_date TEXT",),
+        ("ALTER TABLE correspondence ADD COLUMN workflow_status TEXT DEFAULT 'none'",),
+    ]
+    for (sql,) in migrations:
+        try:
+            conn.execute(sql)
+        except Exception:
+            pass  # العمود موجود مسبقاً
 
 def _populate_fts(conn):
     """ملء فهرس FTS بالبيانات الحالية (عند أول تشغيل أو بعد migration)"""
@@ -618,3 +632,42 @@ def _seed_defaults(conn):
                  category,priority,status,reply_status,date,created_by,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (*c, now()))
+
+-- ─────────────────────────────────────────
+--  التوقيعات الرقمية للمستخدمين
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_signatures (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    company_id  TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    sig_data    TEXT NOT NULL,        -- Base64 PNG image of signature
+    sig_type    TEXT DEFAULT 'drawn', -- drawn | uploaded | stamp
+    is_active   INTEGER DEFAULT 1,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+
+-- التوقيعات المُطبَّقة على المراسلات
+CREATE TABLE IF NOT EXISTS correspondence_signatures (
+    id                TEXT PRIMARY KEY,
+    correspondence_id TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
+    user_id           TEXT NOT NULL REFERENCES users(id),
+    sig_data          TEXT NOT NULL,
+    signed_at         TEXT NOT NULL,
+    sign_role         TEXT,           -- approver / creator / witness
+    page_number       INTEGER DEFAULT 1,
+    x_pos             REAL DEFAULT 0.7,
+    y_pos             REAL DEFAULT 0.1
+);
+CREATE INDEX IF NOT EXISTS idx_corr_sigs ON correspondence_signatures(correspondence_id);
+
+-- ─────────────────────────────────────────
+--  Push Notification Subscriptions
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id                TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subscription_json TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    UNIQUE(user_id)
+);
