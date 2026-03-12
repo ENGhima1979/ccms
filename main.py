@@ -79,8 +79,8 @@ def super_admin_required(f):
     @wraps(f)
     def d(*a,**k):
         if 'user_id' not in session: return redirect(url_for('login'))
-        if session.get('role') != 'super_admin':
-            flash('هذه الصفحة متاحة لمالك النظام فقط','error')
+        if session.get('role') not in ('super_admin','admin'):
+            flash('هذه الصفحة متاحة للمدير فقط','error')
             return redirect(url_for('dashboard'))
         return f(*a,**k)
     return d
@@ -494,10 +494,13 @@ def new_correspondence():
 
         # Workflow: if status is 'pending' create workflow steps
         if status == 'pending':
-            wf_def = conn.execute("SELECT * FROM workflow_definitions WHERE company_id=? AND is_default=1",
-                                  (cid,)).fetchone()
-            if wf_def:
-                _create_workflow_steps(conn, corr_id, wf_def, cid, session['user_id'])
+            try:
+                wf_def = conn.execute("SELECT * FROM workflow_definitions WHERE company_id=? AND is_default=1",
+                                      (cid,)).fetchone()
+                if wf_def:
+                    _create_workflow_steps(conn, corr_id, wf_def, cid, session['user_id'])
+            except Exception as wf_err:
+                app.logger.warning(f'Workflow creation skipped: {wf_err}')
 
         # Audit log
         conn.execute("""INSERT INTO audit_log
@@ -833,18 +836,17 @@ def _create_workflow_steps(conn, corr_id, wf_def, company_id, creator_id):
              assigned_to,assigned_role,status,due_date,is_mandatory,created_at)
             VALUES (?,?,?,?,?,?,?,?,?,1,?)""",
             (new_id(), corr_id, step['step'], step['name'],
-             step.get('action','review'), assigned, role,
+             step.get('action', step.get('desc','review')), assigned, role,
              status, due, now()))
 
         # إشعار المسؤول عن الخطوة الأولى
         if i == 0 and assigned and assigned != creator_id:
-            from helpers import create_notification
             corr = conn.execute("SELECT ref_num,subject FROM correspondence WHERE id=?", (corr_id,)).fetchone()
             if corr:
                 create_notification(assigned, 'workflow',
                     f'🔔 يتطلب مراجعتك: {corr["ref_num"]}',
                     f'{step["name"]}: {corr["subject"]}',
-                    url_for('view_correspondence', cid=corr_id), conn)
+                    f'/correspondence/{corr_id}', conn)
 
     conn.execute("UPDATE correspondence SET workflow_id=?,workflow_status='in_review' WHERE id=?",
                  (wf_def['id'], corr_id))
