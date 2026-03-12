@@ -27,7 +27,8 @@ from helpers import (get_user_project_ids, get_visible_projects,
 
 # ── App ──────────────────────────────────────────────
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.secret_key = 'ccms-professional-2025-ibrahim-secure'
+import os as _os
+app.secret_key = _os.environ.get('SECRET_KEY', 'ccms-professional-2025-ibrahim-secure')
 app.register_blueprint(api_blueprint)
 init_i18n(app)
 UPLOAD_FOLDER  = os.path.join(os.path.dirname(__file__), 'instance', 'uploads')
@@ -1735,7 +1736,7 @@ def save_email_ingestion():
         except: pass
     
     settings['email_ingestion'] = {
-        'enabled': int(request.form.get('enabled', 0)),
+        'enabled': 1 if request.form.get('enabled') else 0,
         'imap_host': request.form.get('imap_host',''),
         'imap_port': int(request.form.get('imap_port', 993)),
         'imap_user': request.form.get('imap_user',''),
