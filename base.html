@@ -477,6 +477,11 @@ textarea.form-control{min-height:120px;resize:vertical}
     <a href="{{ url_for('archive') }}" class="sb-link {% if request.endpoint=='archive' %}active{% endif %}">
       <span class="sb-icon">🗄️</span> الأرشيف
     </a>
+    <a href="{{ url_for('my_workflow_tasks') }}" class="sb-link {% if request.endpoint=='my_workflow_tasks' %}active{% endif %}">
+      <span class="sb-icon">🔄</span> مهام الموافقة
+      {% set wf_count = pending_wf %}
+      {% if wf_count %}<span class="sb-badge warn">{{ wf_count }}</span>{% endif %}
+    </a>
 
     {# ── إدارة الأعمال (الكل) ── #}
     <div class="sb-section">إدارة الأعمال</div>
