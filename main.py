@@ -1968,3 +1968,117 @@ if __name__ == '__main__':
     print("  👤 Manager  : pm_manager / User@2025")
     print("=" * 60)
     app.run(debug=True, host='0.0.0.0', port=5000)
+
+# ══════════════════════════════════════════════════════
+#  SETUP WIZARD — إعداد أولي للشركة
+# ══════════════════════════════════════════════════════
+@app.route('/settings/setup-defaults', methods=['POST'])
+@admin_required
+def setup_defaults():
+    """تهيئة الأقسام + SLA + سير العمل الافتراضي لشركة المقاولات"""
+    conn = get_db()
+    cid  = session['company_id']
+
+    # ── 1. الأقسام ──────────────────────────────────
+    departments = [
+        ('الإدارة العليا',        'Executive Management', 'EXEC'),
+        ('الموارد البشرية',       'Human Resources',      'HR'),
+        ('الإدارة المالية',       'Finance',              'FIN'),
+        ('إدارة التشغيل',         'Operations',           'OPS'),
+        ('إدارة المشاريع',        'Project Management',   'PM'),
+        ('المشتريات وسلسلة الإمداد','Procurement & Supply Chain','PROC'),
+        ('التسويق والمبيعات',     'Marketing & Sales',    'MKT'),
+        ('تقنية المعلومات',       'Information Technology','IT'),
+        ('الإدارة القانونية',     'Legal',                'LEGAL'),
+        ('الجودة والسلامة',       'Quality & HSE',        'HSE'),
+        ('إدارة المواقع',         'Site Management',      'SITE'),
+        ('إدارة الصيانة',         'Maintenance',          'MAINT'),
+        ('إدارة العقود والمطالبات','Contracts & Claims',  'CONT'),
+        ('إدارة التخطيط',         'Planning',             'PLAN'),
+    ]
+    existing_codes = {r['code'] for r in conn.execute(
+        "SELECT code FROM departments WHERE company_id=?", (cid,)).fetchall()}
+    added_depts = 0
+    for name_ar, name_en, code in departments:
+        if code not in existing_codes:
+            conn.execute("""INSERT INTO departments (id,company_id,name,name_en,code,is_active,created_at)
+                VALUES (?,?,?,?,?,1,?)""", (new_id(),cid,name_ar,name_en,code,now()))
+            added_depts += 1
+
+    # ── 2. مستويات SLA ──────────────────────────────
+    sla_exists = conn.execute("SELECT COUNT(*) as c FROM sla_rules WHERE company_id=?", (cid,)).fetchone()['c']
+    added_sla = 0
+    if sla_exists == 0:
+        sla_rules = [
+            ('عاجل جداً — 24 ساعة',       'urgent', 24),
+            ('عاجل — 3 أيام عمل',          'high',   72),
+            ('عادي — 7 أيام عمل',          'normal', 168),
+            ('رسمي مهم — 14 يوم',          'normal', 336),
+            ('تعاقدي — 28 يوم',            'normal', 672),
+        ]
+        for name, priority, hours in sla_rules:
+            conn.execute("""INSERT INTO sla_rules (id,company_id,name,priority,response_hours,is_active,created_at)
+                VALUES (?,?,?,?,?,1,?)""", (new_id(),cid,name,priority,hours,now()))
+            added_sla += 1
+
+    # ── 3. سير العمل الافتراضي ──────────────────────
+    wf_exists = conn.execute("SELECT COUNT(*) as c FROM workflow_definitions WHERE company_id=?", (cid,)).fetchone()['c']
+    added_wf = 0
+    if wf_exists == 0:
+        # مسار المراسلة العادية
+        wf_id = new_id()
+        conn.execute("""INSERT INTO workflow_definitions
+            (id,company_id,name,description,is_default,is_active,created_at)
+            VALUES (?,?,?,?,1,1,?)""",
+            (wf_id, cid,
+             'مسار المراسلة الرسمية',
+             'إعداد ← رئيس القسم ← الإدارة العليا ← تسجيل وإرسال',
+             now()))
+
+        steps_json = json.dumps([
+            {'step': 1, 'name': 'إعداد الخطاب',          'role': 'user',    'desc': 'الموظف / المهندس المختص يُعد المسودة'},
+            {'step': 2, 'name': 'مراجعة رئيس القسم',     'role': 'manager', 'desc': 'مراجعة صحة المعلومات والتوافق مع سياسة القسم'},
+            {'step': 3, 'name': 'اعتماد الإدارة العليا', 'role': 'admin',   'desc': 'اعتماد الصيغة النهائية من المدير العام / مدير المشروع'},
+            {'step': 4, 'name': 'التسجيل والإرسال',      'role': 'admin',   'desc': 'إعطاء رقم صادر وتسجيله وإرساله رسمياً'},
+        ], ensure_ascii=False)
+        conn.execute("UPDATE workflow_definitions SET steps_json=? WHERE id=?", (steps_json, wf_id))
+        added_wf = 1
+
+    conn.commit()
+    conn.close()
+    flash(f'✅ تم الإعداد: {added_depts} قسم، {added_sla} مستوى SLA، {"سير عمل افتراضي" if added_wf else "سير العمل موجود مسبقاً"}', 'success')
+    return redirect(url_for('settings'))
+
+@app.route('/settings/dept/<did>/delete', methods=['POST'])
+@admin_required
+def delete_dept(did):
+    conn = get_db()
+    conn.execute("UPDATE departments SET is_active=0 WHERE id=? AND company_id=?", (did, session['company_id']))
+    conn.commit(); conn.close()
+    flash('تم حذف القسم', 'info')
+    return redirect(url_for('settings'))
+
+@app.route('/settings/sla/add', methods=['POST'])
+@admin_required
+def add_sla():
+    conn = get_db()
+    cid = session['company_id']
+    conn.execute("""INSERT INTO sla_rules (id,company_id,name,priority,response_hours,is_active,created_at)
+        VALUES (?,?,?,?,?,1,?)""",
+        (new_id(), cid,
+         request.form.get('name',''),
+         request.form.get('priority','normal'),
+         int(request.form.get('hours', 168)),
+         now()))
+    conn.commit(); conn.close()
+    flash('✅ تمت إضافة مستوى SLA', 'success')
+    return redirect(url_for('settings') + '#sla')
+
+@app.route('/settings/sla/<sid>/delete', methods=['POST'])
+@admin_required
+def delete_sla(sid):
+    conn = get_db()
+    conn.execute("DELETE FROM sla_rules WHERE id=? AND company_id=?", (sid, session['company_id']))
+    conn.commit(); conn.close()
+    flash('تم حذف مستوى SLA', 'info')
+    return redirect(url_for('settings') + '#sla')
