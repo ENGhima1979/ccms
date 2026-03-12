@@ -491,6 +491,12 @@ textarea.form-control{min-height:120px;resize:vertical}
     <a href="{{ url_for('manage_signature') }}" class="sb-link {% if request.endpoint=='manage_signature' %}active{% endif %}">
       <span class="sb-icon">✍️</span> توقيعي الرقمي
     </a>
+    <a href="{{ url_for('report_builder_page') }}" class="sb-link {% if request.endpoint=='report_builder_page' %}active{% endif %}">
+      <span class="sb-icon">📊</span> منشئ التقارير
+    </a>
+    <a href="{{ url_for('integrations_page') }}" class="sb-link {% if request.endpoint=='integrations_page' %}active{% endif %}">
+      <span class="sb-icon">🔌</span> بوابة التكامل
+    </a>
     {% if is_manager %}
     <a href="{{ url_for('templates_list') }}" class="sb-link {% if request.endpoint in ('templates_list','template_new','template_edit') %}active{% endif %}">
       <span class="sb-icon">📋</span> قوالب الخطابات
