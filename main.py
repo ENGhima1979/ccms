@@ -75,9 +75,6 @@ def manager_required(f):
         return f(*a,**k)
     return d
 
-# ── Context processor ─────────────────────────────────
-@app.context_processor
-
 def super_admin_required(f):
     @wraps(f)
     def d(*a,**k):
@@ -87,6 +84,9 @@ def super_admin_required(f):
             return redirect(url_for('dashboard'))
         return f(*a,**k)
     return d
+
+# ── Context processor ─────────────────────────────────
+@app.context_processor
 def inject_globals():
     if 'user_id' not in session:
         return {'current_user':{},'is_admin':False,'is_manager':False,
