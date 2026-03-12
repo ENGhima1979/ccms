@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 نظام إدارة الاتصالات الإدارية المتكامل
 Corporate Communication Management System (CCMS)
@@ -27,9 +28,9 @@ def today():
 def new_id():
     return str(uuid.uuid4())
 
-# ══════════════════════════════════════════════════════
+# ======================================================
 #  SCHEMA — Complete Professional Database
-# ══════════════════════════════════════════════════════
+# ======================================================
 SCHEMA = """
 -- ─────────────────────────────────────────
 --  شركات / مستأجرون (Multi-tenant ready)
@@ -469,6 +470,76 @@ CREATE INDEX IF NOT EXISTS idx_corr_archived   ON correspondence(archived);
 CREATE INDEX IF NOT EXISTS idx_notif_user      ON notifications(user_id, is_read);
 CREATE INDEX IF NOT EXISTS idx_audit_entity    ON audit_log(entity, entity_id);
 CREATE INDEX IF NOT EXISTS idx_wf_corr         ON workflow_steps(correspondence_id);
+
+-- ─────────────────────────────────────────
+--  Full-Text Search (FTS5)
+-- ─────────────────────────────────────────
+CREATE VIRTUAL TABLE IF NOT EXISTS corr_fts USING fts5(
+    correspondence_id UNINDEXED,
+    ref_num,
+    subject,
+    body,
+    party,
+    action_required,
+    content='correspondence',
+    content_rowid='rowid'
+);
+
+-- Triggers to keep FTS in sync
+CREATE TRIGGER IF NOT EXISTS corr_fts_insert AFTER INSERT ON correspondence BEGIN
+    INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
+    VALUES (new.id, new.ref_num, new.subject, new.body, new.party, new.action_required);
+END;
+
+CREATE TRIGGER IF NOT EXISTS corr_fts_update AFTER UPDATE ON correspondence BEGIN
+    DELETE FROM corr_fts WHERE correspondence_id = old.id;
+    INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
+    VALUES (new.id, new.ref_num, new.subject, new.body, new.party, new.action_required);
+END;
+
+CREATE TRIGGER IF NOT EXISTS corr_fts_delete AFTER DELETE ON correspondence BEGIN
+    DELETE FROM corr_fts WHERE correspondence_id = old.id;
+END;
+
+-- ─────────────────────────────────────────
+--  التوقيعات الرقمية للمستخدمين
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS user_signatures (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    company_id  TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    sig_data    TEXT NOT NULL,        -- Base64 PNG image of signature
+    sig_type    TEXT DEFAULT 'drawn', -- drawn | uploaded | stamp
+    is_active   INTEGER DEFAULT 1,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT
+);
+
+-- التوقيعات المُطبَّقة على المراسلات
+CREATE TABLE IF NOT EXISTS correspondence_signatures (
+    id                TEXT PRIMARY KEY,
+    correspondence_id TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
+    user_id           TEXT NOT NULL REFERENCES users(id),
+    sig_data          TEXT NOT NULL,
+    signed_at         TEXT NOT NULL,
+    sign_role         TEXT,           -- approver / creator / witness
+    page_number       INTEGER DEFAULT 1,
+    x_pos             REAL DEFAULT 0.7,
+    y_pos             REAL DEFAULT 0.1
+);
+CREATE INDEX IF NOT EXISTS idx_corr_sigs ON correspondence_signatures(correspondence_id);
+
+-- ─────────────────────────────────────────
+--  Push Notification Subscriptions
+-- ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id                TEXT PRIMARY KEY,
+    user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subscription_json TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    UNIQUE(user_id)
+);
+
 """
 
 def init_db():
@@ -632,42 +703,3 @@ def _seed_defaults(conn):
                  category,priority,status,reply_status,date,created_by,created_at)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (*c, now()))
-
--- ─────────────────────────────────────────
---  التوقيعات الرقمية للمستخدمين
--- ─────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS user_signatures (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    company_id  TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-    sig_data    TEXT NOT NULL,        -- Base64 PNG image of signature
-    sig_type    TEXT DEFAULT 'drawn', -- drawn | uploaded | stamp
-    is_active   INTEGER DEFAULT 1,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT
-);
-
--- التوقيعات المُطبَّقة على المراسلات
-CREATE TABLE IF NOT EXISTS correspondence_signatures (
-    id                TEXT PRIMARY KEY,
-    correspondence_id TEXT NOT NULL REFERENCES correspondence(id) ON DELETE CASCADE,
-    user_id           TEXT NOT NULL REFERENCES users(id),
-    sig_data          TEXT NOT NULL,
-    signed_at         TEXT NOT NULL,
-    sign_role         TEXT,           -- approver / creator / witness
-    page_number       INTEGER DEFAULT 1,
-    x_pos             REAL DEFAULT 0.7,
-    y_pos             REAL DEFAULT 0.1
-);
-CREATE INDEX IF NOT EXISTS idx_corr_sigs ON correspondence_signatures(correspondence_id);
-
--- ─────────────────────────────────────────
---  Push Notification Subscriptions
--- ─────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS push_subscriptions (
-    id                TEXT PRIMARY KEY,
-    user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    subscription_json TEXT NOT NULL,
-    created_at        TEXT NOT NULL,
-    UNIQUE(user_id)
-);
