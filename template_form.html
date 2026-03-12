@@ -1,0 +1,101 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'تعديل قالب' if item else 'قالب جديد' }}{% endblock %}
+{% block page_title %}{{ '✏️ تعديل قالب' if item else '+ قالب جديد' }}{% endblock %}
+{% block content %}
+<div style="max-width:900px;margin:0 auto">
+  <form method="POST">
+    <div class="card mb-3">
+      <div class="card-header"><h6 class="mb-0">معلومات القالب</h6></div>
+      <div class="card-body" style="padding:20px">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">اسم القالب *</label>
+            <input name="name" class="form-control" required value="{{ form.name or '' }}" placeholder="مثال: خطاب إشعار بالتعاقد">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">التصنيف</label>
+            <input name="category" class="form-control" value="{{ form.category or 'عام' }}" placeholder="عقود، مالية، إدارية...">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">نوع المراسلة</label>
+            <select name="corr_type" class="form-control">
+              <option value="out" {% if form.corr_type=='out' %}selected{% endif %}>صادر</option>
+              <option value="in"  {% if form.corr_type=='in'  %}selected{% endif %}>وارد</option>
+              <option value="internal" {% if form.corr_type=='internal' %}selected{% endif %}>داخلي</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">موضوع القالب</label>
+            <input name="subject_template" class="form-control" value="{{ form.subject_template or '' }}"
+                   placeholder="بشأن عقد {{'{{'}}رقم_العقد{{'}}'}} المبرم مع {{'{{'}}اسم_الجهة{{'}}'}}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-3">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <h6 class="mb-0">نص القالب</h6>
+        <div style="font-size:12px;color:var(--text3)">
+          استخدم <code style="color:var(--sky)">{{'{{'}}اسم_المتغير{{'}}'}}</code> للحقول الديناميكية
+        </div>
+      </div>
+      <div class="card-body" style="padding:20px">
+        <!-- متغيرات جاهزة للإدراج -->
+        <div style="margin-bottom:12px">
+          <span style="font-size:12px;color:var(--text3);margin-left:8px">إدراج سريع:</span>
+          {% set quick_vars = ['اسم_الجهة','رقم_العقد','التاريخ','المبلغ','الموقع','المشروع','اسم_المستلم','رقم_المراسلة'] %}
+          {% for v in quick_vars %}
+          <button type="button" class="btn btn-ghost btn-sm" style="margin:2px;font-size:11px"
+                  onclick="insertVar('{{'{{'}}{{ v }}{{'}}'}}')">{{'{{'}}{{ v }}{{'}}'}}</button>
+          {% endfor %}
+        </div>
+        <textarea name="body_template" id="bodyTemplate" class="form-control" rows="16" required
+                  style="font-family:inherit;direction:rtl"
+                  placeholder="اكتب نص القالب هنا... استخدم {{'{{'}}اسم_الجهة{{'}}'}} للمتغيرات الديناميكية">{{ form.body_template or '' }}</textarea>
+      </div>
+    </div>
+
+    <!-- معاينة مباشرة -->
+    <div class="card mb-3" id="previewCard" style="display:none">
+      <div class="card-header"><h6 class="mb-0">👁️ معاينة</h6></div>
+      <div class="card-body" style="padding:20px;direction:rtl;line-height:1.8" id="previewContent"></div>
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <a href="{{ url_for('templates_list') }}" class="btn btn-ghost">إلغاء</a>
+      <button type="button" class="btn btn-outline" onclick="showPreview()">👁️ معاينة</button>
+      <button type="submit" class="btn btn-electric">{{ 'حفظ التعديلات' if item else '+ إنشاء القالب' }}</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function insertVar(v) {
+  const ta = document.getElementById('bodyTemplate');
+  const start = ta.selectionStart, end = ta.selectionEnd;
+  ta.value = ta.value.substring(0,start) + v + ta.value.substring(end);
+  ta.focus();
+  ta.setSelectionRange(start+v.length, start+v.length);
+}
+
+function showPreview() {
+  const body = document.getElementById('bodyTemplate').value;
+  // Extract variables and ask for values
+  const vars = [...new Set([...body.matchAll(/\{\{([^}]+)\}\}/g)].map(m => m[1].trim()))];
+  let values = {};
+  for (const v of vars) {
+    const val = prompt(`أدخل قيمة لـ: {{${v}}}`, `[${v}]`);
+    values[v] = val || `[${v}]`;
+  }
+  let preview = body;
+  for (const [k, v] of Object.entries(values)) {
+    preview = preview.replaceAll(`{{${k}}}`, `<strong style="color:var(--mint)">${v}</strong>`);
+  }
+  preview = preview.replace(/\n/g,'<br>');
+  document.getElementById('previewContent').innerHTML = preview;
+  document.getElementById('previewCard').style.display = 'block';
+  document.getElementById('previewCard').scrollIntoView({behavior:'smooth'});
+}
+</script>
+{% endblock %}
