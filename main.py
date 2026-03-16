@@ -793,18 +793,33 @@ def view_correspondence(cid):
 def edit_correspondence(cid):
     conn = get_db()
     co   = session['company_id']
-    item = conn.execute("SELECT * FROM correspondence WHERE id=? AND company_id=? AND is_deleted=0",(cid,co)).fetchone()
+    item = conn.execute(
+        "SELECT * FROM correspondence WHERE id=? AND company_id=? AND is_deleted=0",
+        (cid, co)).fetchone()
     if not item:
-        flash('المراسلة غير موجودة','error'); conn.close()
+        flash('المراسلة غير موجودة', 'error')
+        conn.close()
         return redirect(url_for('dashboard'))
 
-    # Granular permission check — السماح للمنشئ بتعديل المراسلات المُعادة/المسودة
-    is_creator = (item['created_by'] == session['user_id'])
+    # ── التحقق من الصلاحية ──
+    # المنطق: المنشئ يستطيع تعديل أي حالة عدا approved
+    # المشرف/admin يستطيع تعديل أي شيء
+    # باقي المستخدمين يحتاجون صلاحية صريحة
+    is_creator    = (item['created_by'] == session['user_id'])
     is_admin_role = session.get('role') in ('super_admin', 'admin')
-    editable_statuses = ('draft', 'returned')
-    if not (is_creator and item['status'] in editable_statuses) and not is_admin_role:
-        if not can_edit_corr(conn, session['user_id'], cid, session['company_id']):
-            flash('ليس لديك صلاحية تعديل هذه المراسلة','error'); conn.close()
+    item_status   = item['status']
+
+    # المعاملات المعتمدة نهائياً: لا يعدّلها أحد إلا super_admin
+    if item_status == 'approved' and session.get('role') != 'super_admin':
+        flash('لا يمكن تعديل معاملة معتمدة نهائياً', 'error')
+        conn.close()
+        return redirect(url_for('view_correspondence', cid=cid))
+
+    # باقي الحالات: المنشئ أو admin أو صاحب الصلاحية
+    if not is_creator and not is_admin_role:
+        if not can_edit_corr(conn, session['user_id'], cid, co):
+            flash('ليس لديك صلاحية تعديل هذه المراسلة', 'error')
+            conn.close()
             return redirect(url_for('view_correspondence', cid=cid))
 
     projects    = get_visible_projects(conn)
@@ -814,64 +829,95 @@ def edit_correspondence(cid):
 
     if request.method == 'POST':
         try:
-            from models import today as _today_fn, now as _now_fn
-            old_status  = item['status']
-            new_status  = request.form.get('status', old_status)
+            import datetime as _dt
+            _now_val   = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            _today_val = datetime.date.today().isoformat()
 
-            # ── حماية: لا يمكن تغيير الحالة إلى approved يدوياً إلا للمشرف
-            if new_status == 'approved' and session.get('role') not in ('super_admin', 'admin'):
+            old_status = item['status']
+            item_dict  = dict(item)
+
+            # ── تحديد الحالة الجديدة ──
+            form_status = request.form.get('status', '').strip()
+
+            if not form_status:
+                # لم يُحدَّد في الفورم → احتفظ بالحالة القديمة
                 new_status = old_status
-
-            # ── إذا كانت المراسلة مُعادة وأُعيد تقديمها تنتقل إلى pending
-            if old_status == 'returned' and new_status not in ('draft',):
+            elif form_status == 'approved' and session.get('role') not in ('super_admin', 'admin'):
+                # لا أحد يمنح الاعتماد يدوياً إلا المشرف
+                new_status = old_status
+            elif old_status == 'returned' and form_status not in ('draft',):
+                # مُعادة وأُعيد تقديمها → pending مجدداً
                 new_status = 'pending'
+            elif old_status == 'pending' and form_status in ('draft',) and not is_admin_role:
+                # لا يمكن للمنشئ سحب معاملة pending إلى draft بمجرد التعديل
+                new_status = 'pending'
+            else:
+                new_status = form_status
 
-            # ── قراءة قيمة reply_status بأمان من sqlite Row
-            item_dict        = dict(item)
-            reply_status_val = (request.form.get('reply_status')
+            # ── reply_status ──
+            reply_status_val = (request.form.get('reply_status', '').strip()
                                 or item_dict.get('reply_status')
                                 or None)
 
-            date_val = request.form.get('date', '').strip() or _today_fn()
+            # ── التاريخ ──
+            date_val = request.form.get('date', '').strip() or _today_val
             due_val  = request.form.get('due_date', '').strip() or None
 
+            # ── الحقول النصية ──
+            subject_val        = request.form.get('subject', '').strip()
+            party_val          = request.form.get('party', '').strip()
+            party_ref_val      = request.form.get('party_ref', '').strip()
+            category_val       = request.form.get('category', 'general').strip() or 'general'
+            priority_val       = request.form.get('priority', 'normal').strip() or 'normal'
+            classification_val = request.form.get('classification', 'normal').strip() or 'normal'
+            body_val           = request.form.get('body', '').strip()
+            action_req_val     = request.form.get('action_required', '').strip()
+            project_id_val     = request.form.get('project_id', '').strip() or None
+            dept_id_val        = request.form.get('department_id', '').strip() or None
+            contact_id_val     = request.form.get('contact_id', '').strip() or None
+
+            if not subject_val or not party_val:
+                flash('الموضوع والجهة حقول مطلوبة', 'error')
+                conn.close()
+                projects    = get_visible_projects(conn) if False else get_visible_projects(get_db())
+                contacts    = []
+                departments = []
+                attachments = []
+                return redirect(url_for('edit_correspondence', cid=cid))
+
+            # ── تنفيذ التحديث ──
             conn.execute(
                 """UPDATE correspondence SET
-                   project_id=?,department_id=?,contact_id=?,
-                   subject=?,party=?,party_ref=?,
-                   category=?,priority=?,classification=?,
-                   body=?,action_required=?,
-                   date=?,due_date=?,
-                   status=?,reply_status=?,updated_at=?
-                   WHERE id=?""",
-                (request.form.get('project_id') or None,
-                 request.form.get('department_id') or None,
-                 request.form.get('contact_id') or None,
-                 request.form.get('subject', '').strip(),
-                 request.form.get('party', '').strip(),
-                 request.form.get('party_ref', '').strip(),
-                 request.form.get('category', 'general'),
-                 request.form.get('priority', 'normal'),
-                 request.form.get('classification', 'normal'),
-                 request.form.get('body', '').strip(),
-                 request.form.get('action_required', '').strip(),
+                   project_id=?,    department_id=?,  contact_id=?,
+                   subject=?,        party=?,           party_ref=?,
+                   category=?,       priority=?,        classification=?,
+                   body=?,           action_required=?,
+                   date=?,           due_date=?,
+                   status=?,         reply_status=?,
+                   updated_at=?
+                   WHERE id=? AND company_id=?""",
+                (project_id_val, dept_id_val, contact_id_val,
+                 subject_val, party_val, party_ref_val,
+                 category_val, priority_val, classification_val,
+                 body_val, action_req_val,
                  date_val, due_val,
                  new_status, reply_status_val,
-                 _now_fn(), cid))
+                 _now_val,
+                 cid, co))  # co = session company_id — double-check ownership
 
-            # ── مرفقات جديدة
+            # ── مرفقات جديدة ──
             for f in request.files.getlist('attachments'):
                 if f and f.filename and allowed(f.filename):
                     fn, fsize = save_file(f, 'att')
                     conn.execute(
                         """INSERT INTO attachments
-                           (id,correspondence_id,filename,original_name,
-                            file_size,mime_type,uploaded_by,uploaded_at)
+                           (id, correspondence_id, filename, original_name,
+                            file_size, mime_type, uploaded_by, uploaded_at)
                            VALUES (?,?,?,?,?,?,?,?)""",
                         (new_id(), cid, fn, secure_filename(f.filename),
-                         fsize, f.content_type, session['user_id'], _now_fn()))
+                         fsize, f.content_type, session['user_id'], _now_val))
 
-            # ── إعادة إنشاء workflow عند إعادة التقديم بعد الإرجاع
+            # ── workflow: إعادة إنشاء الخطوات عند إعادة التقديم ──
             if new_status == 'pending' and old_status in ('returned', 'draft'):
                 try:
                     conn.execute(
@@ -881,29 +927,29 @@ def edit_correspondence(cid):
                     wf_def = conn.execute(
                         "SELECT * FROM workflow_definitions "
                         "WHERE company_id=? AND is_default=1 AND is_active=1",
-                        (session['company_id'],)).fetchone()
+                        (co,)).fetchone()
                     if wf_def:
-                        _create_workflow_steps(conn, cid, wf_def,
-                                               session['company_id'], session['user_id'])
+                        _create_workflow_steps(conn, cid, wf_def, co, session['user_id'])
                 except Exception as wf_err:
                     app.logger.warning(f'Workflow resubmit error: {wf_err}')
 
-            # ── إشعار المراجعين عند إعادة التقديم
-            if new_status == 'pending' and old_status in ('returned', 'draft'):
+                # ── إشعار المراجعين ──
                 try:
-                    admins = conn.execute(
+                    reviewers = conn.execute(
                         """SELECT id FROM users WHERE company_id=?
-                           AND role IN ('admin','super_admin') AND is_active=1""",
-                        (session['company_id'],)).fetchall()
-                    for adm in admins:
-                        if adm['id'] != session['user_id']:
-                            create_notification(
-                                adm['id'], 'workflow',
-                                f'🔔 مراسلة جديدة تحتاج اعتماد: {item_dict.get("ref_num","")}',
-                                f'الموضوع: {request.form.get("subject","").strip()}',
-                                url_for('view_correspondence', cid=cid), conn)
-                except Exception: pass
+                           AND role IN ('admin','super_admin','manager')
+                           AND is_active=1 AND id != ?""",
+                        (co, session['user_id'])).fetchall()
+                    for rv in reviewers:
+                        create_notification(
+                            rv['id'], 'workflow',
+                            f'🔔 مراسلة تحتاج اعتماد: {item_dict.get("ref_num","")}',
+                            f'الموضوع: {subject_val}',
+                            url_for('view_correspondence', cid=cid), conn)
+                except Exception:
+                    pass
 
+            # ── Audit ──
             try:
                 log_audit(conn, 'CORR_EDIT', 'correspondence', cid)
             except Exception:
@@ -917,14 +963,10 @@ def edit_correspondence(cid):
         except Exception as edit_err:
             app.logger.error(f'edit_correspondence error: {edit_err}', exc_info=True)
             try:
-                conn.rollback()
-            except Exception:
-                pass
-            try:
                 conn.close()
             except Exception:
                 pass
-            flash(f'حدث خطأ أثناء حفظ التعديلات — يرجى المحاولة مجدداً', 'error')
+            flash('حدث خطأ أثناء حفظ التعديلات — يرجى المحاولة مجدداً', 'error')
             return redirect(url_for('view_correspondence', cid=cid))
 
     conn.close()
