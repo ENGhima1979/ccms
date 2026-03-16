@@ -70,6 +70,10 @@ from helpers import (get_user_project_ids, get_visible_projects,
 app = Flask(__name__, template_folder='templates', static_folder='static')
 import os as _os
 app.secret_key = _os.environ.get('SECRET_KEY', 'ccms-professional-2025-ibrahim-secure')
+# إعدادات الجلسة: تنتهي عند إغلاق المتصفح ولا تُحفظ تلقائياً
+app.config['SESSION_PERMANENT'] = False
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.register_blueprint(api_blueprint)
 init_i18n(app)
 UPLOAD_FOLDER  = os.path.join(os.path.dirname(__file__), 'instance', 'uploads')
@@ -120,8 +124,8 @@ def super_admin_required(f):
     @wraps(f)
     def d(*a,**k):
         if 'user_id' not in session: return redirect(url_for('login'))
-        if session.get('role') not in ('super_admin','admin'):
-            flash('هذه الصفحة متاحة للمدير فقط','error')
+        if session.get('role') != 'super_admin':
+            flash('هذه الصفحة متاحة للمشرف العام فقط','error')
             return redirect(url_for('dashboard'))
         return f(*a,**k)
     return d
@@ -130,7 +134,7 @@ def super_admin_required(f):
 @app.context_processor
 def inject_globals():
     if 'user_id' not in session:
-        return {'current_user':{},'is_admin':False,'is_manager':False,
+        return {'current_user':{},'is_super_admin':False,'is_admin':False,'is_manager':False,
                 'unread':0,'pending_wf':0,'company':{}}
     conn = get_db()
     co   = conn.execute("SELECT * FROM companies WHERE id=?", (session.get('company_id'),)).fetchone()
@@ -142,6 +146,7 @@ def inject_globals():
             'all_projects':session.get('all_projects','0'),
             'job_title':session.get('job_title',''),
         },
+        'is_super_admin': session.get('role') == 'super_admin',
         'is_admin':   session.get('role') in ('super_admin','admin'),
         'is_manager': session.get('role') in ('super_admin','admin','manager'),
         'can_delete': can_delete(),
@@ -245,6 +250,7 @@ def login():
                             WHERE u.username=? AND u.is_active=1""", (un,)).fetchone()
         conn.close()
         if u and check_password_hash(u['password_hash'], pw):
+            session.permanent = False  # الجلسة تنتهي بإغلاق المتصفح
             session.update({
                 'user_id':u['id'], 'username':u['username'],
                 'full_name':u['full_name'], 'role':u['role'],
@@ -276,12 +282,25 @@ def login():
 @app.route('/logout')
 def logout():
     if 'user_id' in session:
-        conn = get_db()
-        conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,ip_address,created_at)
-                        VALUES (?,?,?,?,?,?,?)""",
-                     (new_id(),session.get('company_id'),session['user_id'],
-                      session.get('username'),'LOGOUT',request.remote_addr,now()))
-        conn.commit(); conn.close()
+        try:
+            conn = get_db()
+            try:
+                conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,ip_address,user_agent,created_at)
+                                VALUES (?,?,?,?,?,?,?,?)""",
+                             (new_id(),session.get('company_id'),session['user_id'],
+                              session.get('username'),'LOGOUT',request.remote_addr,
+                              request.headers.get('User-Agent','')[:200],now()))
+            except Exception:
+                try:
+                    conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,ip_address,created_at)
+                                    VALUES (?,?,?,?,?,?,?)""",
+                                 (new_id(),session.get('company_id'),session['user_id'],
+                                  session.get('username'),'LOGOUT',request.remote_addr,now()))
+                except Exception:
+                    pass
+            conn.commit(); conn.close()
+        except Exception:
+            pass
     session.clear()
     return redirect(url_for('login'))
 
@@ -290,6 +309,13 @@ def logout():
 #  DASHBOARD
 # ======================================================
 @app.route('/')
+def index():
+    """نقطة الدخول الرئيسية — توجيه للداشبورد أو صفحة الدخول"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard')
 @login_required
 def dashboard():
     conn = get_db()
@@ -529,17 +555,26 @@ def new_correspondence():
                 form=request.form)
 
         # Generate reference number
-        proj_code = 'GEN'
-        if proj_id:
-            p = conn.execute("SELECT code FROM projects WHERE id=?", (proj_id,)).fetchone()
-            if p: proj_code = p['code']
-        year = datetime.datetime.now().year
-        co_code = conn.execute("SELECT code FROM companies WHERE id=?", (cid,)).fetchone()['code']
-        seq = conn.execute("""SELECT COUNT(*)+1 as n FROM correspondence
-                              WHERE company_id=? AND type=? AND substr(date,1,4)=?""",
-                           (cid, type_, str(year))).fetchone()['n']
-        type_code = {'out':'OUT','in':'IN','internal':'INT'}[type_]
-        ref_num = f"{co_code}-{proj_code}-{year}-{type_code}-{str(seq).zfill(5)}"
+        try:
+            proj_code = 'GEN'
+            if proj_id:
+                p = conn.execute("SELECT code FROM projects WHERE id=?", (proj_id,)).fetchone()
+                if p: proj_code = p['code']
+            year = datetime.datetime.now().year
+            co_row = conn.execute("SELECT code FROM companies WHERE id=?", (cid,)).fetchone()
+            co_code = (co_row['code'] if co_row and co_row['code'] else 'CO')
+            seq = conn.execute("""SELECT COUNT(*)+1 as n FROM correspondence
+                                  WHERE company_id=? AND type=? AND substr(date,1,4)=?""",
+                               (cid, type_, str(year))).fetchone()['n']
+            type_code = {'out':'OUT','in':'IN','internal':'INT'}.get(type_, 'OUT')
+            ref_num = f"{co_code}-{proj_code}-{year}-{type_code}-{str(seq).zfill(5)}"
+        except Exception as ref_err:
+            conn.close()
+            app.logger.error(f'ref_num generation error: {ref_err}')
+            flash('حدث خطأ أثناء توليد رقم المرجع، يرجى المحاولة مجدداً','error')
+            return render_template('correspondence_form.html', projects=projects,
+                contacts=contacts, templates=templates_list, departments=departments,
+                form=request.form)
 
         corr_id = new_id()
         conn.execute("""INSERT INTO correspondence
@@ -584,11 +619,11 @@ def new_correspondence():
     pre_template = request.args.get('template','')
     pre_form = {}
     if pre_template:
-        t = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?",(pre_template,cid)).fetchone()
-        if t:
-            pre_form = {'subject': t['subject_template'] or '', 'body': t['body_template'],
-                        'type': t['corr_type'], '_template_id': pre_template,
-                        '_variables': t['variables_json']}
+        tmpl = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?",(pre_template,cid)).fetchone()
+        if tmpl:
+            pre_form = {'subject': tmpl['subject_template'] or '', 'body': tmpl['body_template'],
+                        'type': tmpl['corr_type'], '_template_id': pre_template,
+                        '_variables': tmpl['variables_json']}
             conn.execute("UPDATE templates SET usage_count=usage_count+1 WHERE id=?",(pre_template,))
             conn.commit()
     conn.close()
@@ -651,10 +686,14 @@ def edit_correspondence(cid):
         flash('المراسلة غير موجودة','error'); conn.close()
         return redirect(url_for('dashboard'))
 
-    # Granular permission check
-    if not can_edit_corr(conn, session['user_id'], cid, session['company_id']):
-        flash('ليس لديك صلاحية تعديل هذه المراسلة','error'); conn.close()
-        return redirect(url_for('view_correspondence', cid=cid))
+    # Granular permission check — السماح للمنشئ بتعديل المراسلات المُعادة/المسودة
+    is_creator = (item['created_by'] == session['user_id'])
+    is_admin_role = session.get('role') in ('super_admin', 'admin')
+    editable_statuses = ('draft', 'returned')
+    if not (is_creator and item['status'] in editable_statuses) and not is_admin_role:
+        if not can_edit_corr(conn, session['user_id'], cid, session['company_id']):
+            flash('ليس لديك صلاحية تعديل هذه المراسلة','error'); conn.close()
+            return redirect(url_for('view_correspondence', cid=cid))
 
     projects    = get_visible_projects(conn)
     contacts    = conn.execute("SELECT * FROM contacts WHERE company_id=? AND is_active=1 ORDER BY name",(co,)).fetchall()
@@ -664,6 +703,13 @@ def edit_correspondence(cid):
     if request.method == 'POST':
         old_status = item['status']
         new_status = request.form.get('status', old_status)
+        # منع تغيير الحالة يدوياً لـ approved إذا كان هناك سير عمل نشط
+        if new_status == 'approved' and session.get('role') not in ('super_admin', 'admin'):
+            new_status = old_status
+        # إذا كانت المراسلة معادة (returned) وأُعيد تقديمها، ترجع لـ pending
+        if old_status == 'returned' and new_status not in ('draft',):
+            new_status = 'pending'
+        reply_status_val = request.form.get('reply_status') or item.get('reply_status') or None
         conn.execute("""UPDATE correspondence SET
             project_id=?,department_id=?,contact_id=?,subject=?,party=?,
             party_ref=?,category=?,priority=?,classification=?,body=?,
@@ -683,7 +729,7 @@ def edit_correspondence(cid):
              request.form.get('date', today()),
              request.form.get('due_date','') or None,
              new_status,
-             request.form.get('reply_status', item['reply_status']),
+             reply_status_val,
              now(), cid))
 
         files = request.files.getlist('attachments')
@@ -692,6 +738,17 @@ def edit_correspondence(cid):
                 fn, fsize = save_file(f, 'att')
                 conn.execute("INSERT INTO attachments (id,correspondence_id,filename,original_name,file_size,mime_type,uploaded_by,uploaded_at) VALUES (?,?,?,?,?,?,?,?)",
                              (new_id(),cid,fn,secure_filename(f.filename),fsize,f.content_type,session['user_id'],now()))
+
+        # إذا أُعيد تقديم المراسلة بعد الإرجاع، أعِد إنشاء خطوات سير العمل
+        if new_status == 'pending' and old_status in ('returned', 'draft'):
+            try:
+                conn.execute("DELETE FROM workflow_steps WHERE correspondence_id=? AND status IN ('cancelled','waiting')", (cid,))
+                wf_def = conn.execute("SELECT * FROM workflow_definitions WHERE company_id=? AND is_default=1 AND is_active=1",
+                                      (session['company_id'],)).fetchone()
+                if wf_def:
+                    _create_workflow_steps(conn, cid, wf_def, session['company_id'], session['user_id'])
+            except Exception as wf_err:
+                app.logger.warning(f'Workflow resubmit error: {wf_err}')
 
         log_audit(conn, 'CORR_EDIT', 'correspondence', cid)
         conn.commit(); conn.close()
@@ -760,6 +817,9 @@ def workflow_action(step_id):
 
     corr_id = step['correspondence_id']
     corr    = conn.execute("SELECT * FROM correspondence WHERE id=?", (corr_id,)).fetchone()
+    if not corr:
+        flash('المراسلة المرتبطة بهذه الخطوة غير موجودة','error'); conn.close()
+        return redirect(url_for('dashboard'))
 
     # -- تحقق أن المستخدم هو المسؤول عن هذه الخطوة --
     if step['assigned_to'] and step['assigned_to'] != session['user_id']:
@@ -777,13 +837,16 @@ def workflow_action(step_id):
 
     # -- تسجيل في Audit Trail --
     action_label = {'approve':'اعتمد','reject':'رفض','return':'أعاد للمراجعة'}.get(action,action)
-    conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,entity,entity_id,new_value,created_at)
-        VALUES (?,?,?,?,?,?,?,?,?)""",
-        (new_id(), session['company_id'], session['user_id'],
-         session.get('username',''),
-         f'workflow_{action}', 'correspondence', corr_id,
-         f'{action_label} خطوة: {step["step_name"]} | ملاحظة: {note or "—"}',
-         now()))
+    try:
+        conn.execute("""INSERT INTO audit_log (id,company_id,user_id,username,action,entity,entity_id,new_value,created_at)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (new_id(), session['company_id'], session['user_id'],
+             session.get('username',''),
+             f'workflow_{action}', 'correspondence', corr_id,
+             f'{action_label} خطوة: {step["step_name"]} | ملاحظة: {note or "—"}',
+             now()))
+    except Exception:
+        pass
 
     if action == 'reject':
         # -- رفض نهائي: أبلغ المُنشئ --
@@ -1815,7 +1878,7 @@ def templates_list():
         FROM templates t LEFT JOIN users u ON t.created_by=u.id
         WHERE t.company_id=? ORDER BY t.category, t.name
     """, (cid,)).fetchall()
-    categories = list(dict.fromkeys(t['category'] for t in tmps))
+    categories = list(dict.fromkeys(tmpl['category'] for tmpl in tmps))
     conn.close()
     return render_template('templates_list.html', templates=tmps, categories=categories)
 
@@ -1853,8 +1916,8 @@ def template_new():
 def template_edit(tid):
     conn = get_db()
     cid  = session['company_id']
-    t    = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?", (tid,cid)).fetchone()
-    if not t:
+    tmpl_obj = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?", (tid,cid)).fetchone()
+    if not tmpl_obj:
         flash('القالب غير موجود','error'); conn.close()
         return redirect(url_for('templates_list'))
     if request.method == 'POST':
@@ -1874,7 +1937,7 @@ def template_edit(tid):
         flash('✅ تم تحديث القالب', 'success')
         return redirect(url_for('templates_list'))
     conn.close()
-    return render_template('template_form.html', item=t, form=dict(t))
+    return render_template('template_form.html', item=tmpl_obj, form=dict(tmpl_obj))
 
 
 @app.route('/templates/<tid>/delete', methods=['POST'])
@@ -1892,13 +1955,13 @@ def template_delete(tid):
 def api_template_preview(tid):
     """معاينة القالب بعد ملء المتغيرات"""
     conn = get_db()
-    t = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?",
+    tmpl_prev = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?",
                      (tid, session['company_id'])).fetchone()
     conn.close()
-    if not t: return jsonify({'error': 'not found'}), 404
+    if not tmpl_prev: return jsonify({'error': 'not found'}), 404
     values = request.json or {}
-    body    = t['body_template']
-    subject = t['subject_template'] or ''
+    body    = tmpl_prev['body_template']
+    subject = tmpl_prev['subject_template'] or ''
     for key, val in values.items():
         body    = body.replace('{{' + key + '}}', val)
         subject = subject.replace('{{' + key + '}}', val)
@@ -2201,12 +2264,12 @@ def debug_tables():
     tables = ['correspondence','companies','users','saved_reports',
               'ocr_results','integration_configs','integration_logs',
               'user_signatures','correspondence_signatures']
-    for t in tables:
+    for tbl_name in tables:
         try:
-            c = conn.execute(f'SELECT COUNT(*) as n FROM {t}').fetchone()
-            results[t] = f'OK ({c["n"]} rows)'
+            c = conn.execute(f'SELECT COUNT(*) as n FROM {tbl_name}').fetchone()
+            results[tbl_name] = f'OK ({c["n"]} rows)'
         except Exception as e:
-            results[t] = f'ERROR: {e}'
+            results[tbl_name] = f'ERROR: {e}'
     
     # Check imports
     try:
@@ -2884,10 +2947,10 @@ def api_contacts_search():
 @login_required
 def api_get_template(tid):
     conn = get_db()
-    t = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?",(tid,session['company_id'])).fetchone()
+    tmpl_api = conn.execute("SELECT * FROM templates WHERE id=? AND company_id=?",(tid,session['company_id'])).fetchone()
     conn.close()
-    if not t: return jsonify({'error':'not found'}),404
-    return jsonify(dict(t))
+    if not tmpl_api: return jsonify({'error':'not found'}),404
+    return jsonify(dict(tmpl_api))
 
 @app.route('/api/dashboard/stats')
 @login_required
@@ -2934,10 +2997,10 @@ def generate_api_key():
 @app.route('/super-admin')
 @super_admin_required
 def super_admin():
-    # Only super admin (first user ever created, id=1 or role=super_admin)
+    # Only super_admin role can access this
     conn = get_db()
     user = conn.execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
-    if not user or user['role'] not in ('super_admin', 'admin'):
+    if not user or user['role'] != 'super_admin':
         conn.close()
         flash('غير مصرح لك بالوصول', 'error')
         return redirect(url_for('dashboard'))
@@ -2953,7 +3016,7 @@ def super_admin():
     return render_template('super_admin.html', companies=companies)
 
 @app.route('/super-admin/company/new', methods=['GET','POST'])
-@admin_required
+@super_admin_required
 def new_company():
     if request.method == 'POST':
         conn = get_db()
@@ -3001,7 +3064,7 @@ def new_company():
     return render_template('company_form.html')
 
 @app.route('/super-admin/switch/<company_id>', methods=['POST'])
-@admin_required
+@super_admin_required
 def switch_company(company_id):
     """Super admin switches to manage another company"""
     conn = get_db()
@@ -3014,7 +3077,7 @@ def switch_company(company_id):
     return redirect(url_for('dashboard'))
 
 @app.route('/super-admin/company/<cid>/toggle', methods=['POST'])
-@admin_required
+@super_admin_required
 def toggle_company(cid):
     """تفعيل/إيقاف شركة"""
     conn = get_db()
@@ -3029,7 +3092,7 @@ def toggle_company(cid):
     return redirect(url_for('super_admin'))
 
 @app.route('/super-admin/company/<cid>/delete', methods=['POST'])
-@admin_required
+@super_admin_required
 def delete_company(cid):
     """حذف شركة نهائياً"""
     conn = get_db()
@@ -3048,7 +3111,7 @@ def delete_company(cid):
     return redirect(url_for('super_admin'))
 
 @app.route('/super-admin/company/<cid>/subscription', methods=['POST'])
-@admin_required
+@super_admin_required
 def update_subscription(cid):
     """تحديث بيانات الاشتراك"""
     conn = get_db()
