@@ -153,7 +153,6 @@ def inject_globals():
         'unread':     get_unread_count(),
         'pending_wf': get_pending_workflow_count(),
         'company':    dict(co) if co else {},
-        'today':      __import__('datetime').date.today,
     }
 
 # -- Template filters ----------------------------------
@@ -181,10 +180,12 @@ def fromjson_sub(v):
 
 @app.context_processor
 def inject_today():
-    import datetime
+    import datetime as _dt
     return {
-        'today': datetime.date.today().isoformat(),
-        'now': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'today_str': _dt.date.today().isoformat(),
+        'now_str':   _dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
+        'today':     _dt.date.today().isoformat(),   # للتوافق مع القوالب
+        'now':       _dt.datetime.now().strftime('%Y-%m-%d %H:%M'),
     }
 
 @app.template_filter('ar_date')
@@ -371,27 +372,98 @@ def dashboard():
         if x['project_id']:
             proj_activity[x['project_id']] = proj_activity.get(x['project_id'],0)+1
 
-    # Pending workflow tasks for this user
-    wf_tasks = conn.execute("""
-        SELECT ws.*,c.ref_num,c.subject,c.priority,p.name as proj_name
-        FROM workflow_steps ws
-        JOIN correspondence c ON ws.correspondence_id=c.id
-        LEFT JOIN projects p ON c.project_id=p.id
-        WHERE ws.assigned_to=? AND ws.status='pending' AND c.is_deleted=0
-        ORDER BY ws.created_at LIMIT 5""", (session['user_id'],)).fetchall()
+    uid = session['user_id']
 
-    # Notifications
-    notifs = conn.execute("""SELECT * FROM notifications WHERE user_id=?
-                             ORDER BY created_at DESC LIMIT 8""",
-                          (session['user_id'],)).fetchall()
+    # ── معاملات تحتاج اعتمادي (assigned إليّ في workflow) ──
+    needs_approval = conn.execute("""
+        SELECT ws.id as step_id, ws.step_name, ws.due_date,
+               c.id, c.ref_num, c.subject, c.priority, c.type,
+               c.status, c.workflow_status, c.created_at,
+               u.full_name as creator_name, p.name as proj_name
+        FROM workflow_steps ws
+        JOIN correspondence c ON ws.correspondence_id = c.id
+        LEFT JOIN users u ON c.created_by = u.id
+        LEFT JOIN projects p ON c.project_id = p.id
+        WHERE ws.assigned_to=? AND ws.status='pending'
+        AND c.company_id=? AND c.is_deleted=0
+        ORDER BY
+            CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2
+                            WHEN 'normal' THEN 3 ELSE 4 END,
+            ws.due_date ASC NULLS LAST
+        LIMIT 20""", (uid, cid)).fetchall()
+
+    # ── معاملات مُعادة إليّ للتعديل ──
+    returned_to_me = conn.execute("""
+        SELECT c.*, u.full_name as creator_name, p.name as proj_name
+        FROM correspondence c
+        LEFT JOIN users u ON c.created_by = u.id
+        LEFT JOIN projects p ON c.project_id = p.id
+        WHERE c.company_id=? AND c.created_by=?
+        AND c.status='returned' AND c.is_deleted=0
+        ORDER BY c.updated_at DESC LIMIT 10""", (cid, uid)).fetchall()
+
+    # ── مسوداتي المحفوظة ──
+    my_drafts = conn.execute("""
+        SELECT c.*, p.name as proj_name
+        FROM correspondence c
+        LEFT JOIN projects p ON c.project_id = p.id
+        WHERE c.company_id=? AND c.created_by=?
+        AND c.status='draft' AND c.is_deleted=0
+        ORDER BY c.updated_at DESC, c.created_at DESC LIMIT 10""", (cid, uid)).fetchall()
+
+    # ── معاملات في انتظار الاعتماد (للمدراء فقط) ──
+    pending_approval_all = []
+    if session.get('role') in ('admin', 'super_admin', 'manager'):
+        pending_approval_all = conn.execute("""
+            SELECT c.*, u.full_name as creator_name, p.name as proj_name
+            FROM correspondence c
+            LEFT JOIN users u ON c.created_by = u.id
+            LEFT JOIN projects p ON c.project_id = p.id
+            WHERE c.company_id=? AND c.status='pending'
+            AND c.is_deleted=0
+            ORDER BY
+                CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2
+                                WHEN 'normal' THEN 3 ELSE 4 END,
+                c.created_at ASC
+            LIMIT 20""", (cid,)).fetchall()
+
+    # ── Workflow tasks ──
+    wf_tasks = needs_approval
+
+    # ── الإشعارات مع التمييز بين أنواعها ──
+    notifs = conn.execute("""
+        SELECT n.*,
+               CASE
+                 WHEN n.type='workflow'         THEN 1
+                 WHEN n.type='new_correspondence' THEN 2
+                 WHEN n.type='new_draft'        THEN 3
+                 ELSE 4
+               END as priority_order
+        FROM notifications n
+        WHERE n.user_id=?
+        ORDER BY n.is_read ASC, priority_order ASC, n.created_at DESC
+        LIMIT 15""", (uid,)).fetchall()
+
+    # ── إحصاء الإشعارات غير المقروءة حسب النوع ──
+    unread_approval = sum(1 for n in notifs
+                          if not n['is_read'] and n['type'] in ('workflow','new_correspondence'))
+    unread_total    = sum(1 for n in notifs if not n['is_read'])
 
     conn.close()
     return render_template('dashboard.html',
         total=total, out_c=out_c, in_c=in_c, urgent=urgent,
         pending_reply=pending_reply, drafts=drafts,
         overdue=overdue, recent=recent, projects=projects,
-        monthly=list(monthly.values()), wf_tasks=wf_tasks,
-        notifs=notifs, proj_activity=proj_activity)
+        monthly=list(monthly.values()),
+        wf_tasks=wf_tasks,
+        needs_approval=needs_approval,
+        returned_to_me=returned_to_me,
+        my_drafts=my_drafts,
+        pending_approval_all=pending_approval_all,
+        notifs=notifs,
+        unread_approval=unread_approval,
+        unread_total=unread_total,
+        proj_activity=proj_activity)
 
 def ar_month(m):
     return ['','يناير','فبراير','مارس','أبريل','مايو','يونيو',
@@ -598,21 +670,61 @@ def new_correspondence():
                     VALUES (?,?,?,?,?,?,?,?)""",
                     (new_id(),corr_id,fn,secure_filename(f.filename),fsize,f.content_type,session['user_id'],now()))
 
-        # Workflow: if status is 'pending' create workflow steps
+        # ── إنشاء خطوات workflow إذا الحالة pending ──
         if status == 'pending':
             try:
-                wf_def = conn.execute("SELECT * FROM workflow_definitions WHERE company_id=? AND is_default=1",
-                                      (cid,)).fetchone()
+                wf_def = conn.execute(
+                    "SELECT * FROM workflow_definitions WHERE company_id=? AND is_default=1",
+                    (cid,)).fetchone()
                 if wf_def:
                     _create_workflow_steps(conn, corr_id, wf_def, cid, session['user_id'])
             except Exception as wf_err:
                 app.logger.warning(f'Workflow creation skipped: {wf_err}')
 
-        # Audit log
-        log_audit(conn,'CORR_CREATE','correspondence',corr_id,new_value=ref_num)
+            # ── إشعار المراجعين والمدراء بالمعاملة الجديدة ──
+            try:
+                reviewers = conn.execute(
+                    """SELECT id, full_name FROM users
+                       WHERE company_id=? AND role IN ('admin','super_admin','manager')
+                       AND is_active=1 AND id != ?""",
+                    (cid, session['user_id'])).fetchall()
+                for rv in reviewers:
+                    create_notification(
+                        rv['id'], 'new_correspondence',
+                        f'📨 معاملة جديدة تحتاج مراجعة: {ref_num}',
+                        f'الموضوع: {subject} | الجهة: {party} | الأولوية: {priority}',
+                        url_for('view_correspondence', cid=corr_id),
+                        conn)
+            except Exception as notif_err:
+                app.logger.warning(f'Notification skipped: {notif_err}')
 
-        conn.commit(); conn.close()
-        flash(f'✅ تم إنشاء المراسلة <strong>{ref_num}</strong> بنجاح','success')
+        # ── إشعار للمدراء بأي معاملة جديدة (حتى المسودات للمتابعة) ──
+        elif status == 'draft':
+            try:
+                admins = conn.execute(
+                    """SELECT id FROM users WHERE company_id=?
+                       AND role IN ('admin','super_admin') AND is_active=1
+                       AND id != ?""",
+                    (cid, session['user_id'])).fetchall()
+                for adm in admins:
+                    create_notification(
+                        adm['id'], 'new_draft',
+                        f'📝 مسودة جديدة أُنشئت: {ref_num}',
+                        f'الموضوع: {subject} | بقلم: {session.get("full_name","")}',
+                        url_for('view_correspondence', cid=corr_id),
+                        conn)
+            except Exception:
+                pass
+
+        # ── Audit log ──
+        try:
+            log_audit(conn, 'CORR_CREATE', 'correspondence', corr_id, new_value=ref_num)
+        except Exception:
+            pass
+
+        conn.commit()
+        conn.close()
+        flash(f'✅ تم إنشاء المراسلة <strong>{ref_num}</strong> بنجاح', 'success')
         return redirect(url_for('view_correspondence', cid=corr_id))
 
     # تحميل قالب إذا تم اختياره
@@ -701,59 +813,119 @@ def edit_correspondence(cid):
     attachments = conn.execute("SELECT * FROM attachments WHERE correspondence_id=?",(cid,)).fetchall()
 
     if request.method == 'POST':
-        old_status = item['status']
-        new_status = request.form.get('status', old_status)
-        # منع تغيير الحالة يدوياً لـ approved إذا كان هناك سير عمل نشط
-        if new_status == 'approved' and session.get('role') not in ('super_admin', 'admin'):
-            new_status = old_status
-        # إذا كانت المراسلة معادة (returned) وأُعيد تقديمها، ترجع لـ pending
-        if old_status == 'returned' and new_status not in ('draft',):
-            new_status = 'pending'
-        reply_status_val = request.form.get('reply_status') or item.get('reply_status') or None
-        conn.execute("""UPDATE correspondence SET
-            project_id=?,department_id=?,contact_id=?,subject=?,party=?,
-            party_ref=?,category=?,priority=?,classification=?,body=?,
-            action_required=?,date=?,due_date=?,status=?,reply_status=?,updated_at=?
-            WHERE id=?""",
-            (request.form.get('project_id') or None,
-             request.form.get('department_id') or None,
-             request.form.get('contact_id') or None,
-             request.form.get('subject','').strip(),
-             request.form.get('party','').strip(),
-             request.form.get('party_ref','').strip(),
-             request.form.get('category','general'),
-             request.form.get('priority','normal'),
-             request.form.get('classification','normal'),
-             request.form.get('body','').strip(),
-             request.form.get('action_required','').strip(),
-             request.form.get('date', today()),
-             request.form.get('due_date','') or None,
-             new_status,
-             reply_status_val,
-             now(), cid))
+        try:
+            from models import today as _today_fn, now as _now_fn
+            old_status  = item['status']
+            new_status  = request.form.get('status', old_status)
 
-        files = request.files.getlist('attachments')
-        for f in files:
-            if f and f.filename and allowed(f.filename):
-                fn, fsize = save_file(f, 'att')
-                conn.execute("INSERT INTO attachments (id,correspondence_id,filename,original_name,file_size,mime_type,uploaded_by,uploaded_at) VALUES (?,?,?,?,?,?,?,?)",
-                             (new_id(),cid,fn,secure_filename(f.filename),fsize,f.content_type,session['user_id'],now()))
+            # ── حماية: لا يمكن تغيير الحالة إلى approved يدوياً إلا للمشرف
+            if new_status == 'approved' and session.get('role') not in ('super_admin', 'admin'):
+                new_status = old_status
 
-        # إذا أُعيد تقديم المراسلة بعد الإرجاع، أعِد إنشاء خطوات سير العمل
-        if new_status == 'pending' and old_status in ('returned', 'draft'):
+            # ── إذا كانت المراسلة مُعادة وأُعيد تقديمها تنتقل إلى pending
+            if old_status == 'returned' and new_status not in ('draft',):
+                new_status = 'pending'
+
+            # ── قراءة قيمة reply_status بأمان من sqlite Row
+            item_dict        = dict(item)
+            reply_status_val = (request.form.get('reply_status')
+                                or item_dict.get('reply_status')
+                                or None)
+
+            date_val = request.form.get('date', '').strip() or _today_fn()
+            due_val  = request.form.get('due_date', '').strip() or None
+
+            conn.execute(
+                """UPDATE correspondence SET
+                   project_id=?,department_id=?,contact_id=?,
+                   subject=?,party=?,party_ref=?,
+                   category=?,priority=?,classification=?,
+                   body=?,action_required=?,
+                   date=?,due_date=?,
+                   status=?,reply_status=?,updated_at=?
+                   WHERE id=?""",
+                (request.form.get('project_id') or None,
+                 request.form.get('department_id') or None,
+                 request.form.get('contact_id') or None,
+                 request.form.get('subject', '').strip(),
+                 request.form.get('party', '').strip(),
+                 request.form.get('party_ref', '').strip(),
+                 request.form.get('category', 'general'),
+                 request.form.get('priority', 'normal'),
+                 request.form.get('classification', 'normal'),
+                 request.form.get('body', '').strip(),
+                 request.form.get('action_required', '').strip(),
+                 date_val, due_val,
+                 new_status, reply_status_val,
+                 _now_fn(), cid))
+
+            # ── مرفقات جديدة
+            for f in request.files.getlist('attachments'):
+                if f and f.filename and allowed(f.filename):
+                    fn, fsize = save_file(f, 'att')
+                    conn.execute(
+                        """INSERT INTO attachments
+                           (id,correspondence_id,filename,original_name,
+                            file_size,mime_type,uploaded_by,uploaded_at)
+                           VALUES (?,?,?,?,?,?,?,?)""",
+                        (new_id(), cid, fn, secure_filename(f.filename),
+                         fsize, f.content_type, session['user_id'], _now_fn()))
+
+            # ── إعادة إنشاء workflow عند إعادة التقديم بعد الإرجاع
+            if new_status == 'pending' and old_status in ('returned', 'draft'):
+                try:
+                    conn.execute(
+                        "DELETE FROM workflow_steps "
+                        "WHERE correspondence_id=? AND status IN ('cancelled','waiting')",
+                        (cid,))
+                    wf_def = conn.execute(
+                        "SELECT * FROM workflow_definitions "
+                        "WHERE company_id=? AND is_default=1 AND is_active=1",
+                        (session['company_id'],)).fetchone()
+                    if wf_def:
+                        _create_workflow_steps(conn, cid, wf_def,
+                                               session['company_id'], session['user_id'])
+                except Exception as wf_err:
+                    app.logger.warning(f'Workflow resubmit error: {wf_err}')
+
+            # ── إشعار المراجعين عند إعادة التقديم
+            if new_status == 'pending' and old_status in ('returned', 'draft'):
+                try:
+                    admins = conn.execute(
+                        """SELECT id FROM users WHERE company_id=?
+                           AND role IN ('admin','super_admin') AND is_active=1""",
+                        (session['company_id'],)).fetchall()
+                    for adm in admins:
+                        if adm['id'] != session['user_id']:
+                            create_notification(
+                                adm['id'], 'workflow',
+                                f'🔔 مراسلة جديدة تحتاج اعتماد: {item_dict.get("ref_num","")}',
+                                f'الموضوع: {request.form.get("subject","").strip()}',
+                                url_for('view_correspondence', cid=cid), conn)
+                except Exception: pass
+
             try:
-                conn.execute("DELETE FROM workflow_steps WHERE correspondence_id=? AND status IN ('cancelled','waiting')", (cid,))
-                wf_def = conn.execute("SELECT * FROM workflow_definitions WHERE company_id=? AND is_default=1 AND is_active=1",
-                                      (session['company_id'],)).fetchone()
-                if wf_def:
-                    _create_workflow_steps(conn, cid, wf_def, session['company_id'], session['user_id'])
-            except Exception as wf_err:
-                app.logger.warning(f'Workflow resubmit error: {wf_err}')
+                log_audit(conn, 'CORR_EDIT', 'correspondence', cid)
+            except Exception:
+                pass
 
-        log_audit(conn, 'CORR_EDIT', 'correspondence', cid)
-        conn.commit(); conn.close()
-        flash('✅ تم تحديث المراسلة بنجاح','success')
-        return redirect(url_for('view_correspondence', cid=cid))
+            conn.commit()
+            conn.close()
+            flash('✅ تم تحديث المراسلة بنجاح', 'success')
+            return redirect(url_for('view_correspondence', cid=cid))
+
+        except Exception as edit_err:
+            app.logger.error(f'edit_correspondence error: {edit_err}', exc_info=True)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+            flash(f'حدث خطأ أثناء حفظ التعديلات — يرجى المحاولة مجدداً', 'error')
+            return redirect(url_for('view_correspondence', cid=cid))
 
     conn.close()
     return render_template('correspondence_form.html', projects=projects,
@@ -849,24 +1021,40 @@ def workflow_action(step_id):
         pass
 
     if action == 'reject':
-        # -- رفض نهائي: أبلغ المُنشئ --
-        conn.execute("UPDATE correspondence SET workflow_status='rejected',status='draft' WHERE id=?", (corr_id,))
-        conn.execute("UPDATE workflow_steps SET status='cancelled' WHERE correspondence_id=? AND status='waiting'", (corr_id,))
-        create_notification(corr['created_by'], 'workflow',
-            f'❌ تم رفض مراسلتك: {corr["ref_num"]}',
-            f'سبب الرفض: {note or "لم يُذكر"}',
-            url_for('view_correspondence', cid=corr_id), conn)
-        flash('تم رفض المراسلة وإشعار المُنشئ','warning')
+        # ── رفض نهائي ──
+        conn.execute(
+            "UPDATE correspondence SET workflow_status='rejected',status='draft' WHERE id=?",
+            (corr_id,))
+        conn.execute(
+            "UPDATE workflow_steps SET status='cancelled' "
+            "WHERE correspondence_id=? AND status='waiting'",
+            (corr_id,))
+        try:
+            create_notification(
+                corr['created_by'], 'workflow_rejected',
+                f'❌ تم رفض مراسلتك: {corr["ref_num"]}',
+                f'سبب الرفض: {note or "لم يُذكر"} | بواسطة: {session.get("full_name","")}',
+                url_for('view_correspondence', cid=corr_id), conn)
+        except Exception: pass
+        flash('تم رفض المراسلة وإشعار المُنشئ', 'warning')
 
     elif action == 'return':
-        # -- إعادة للخطوة الأولى (المُنشئ) للتعديل --
-        conn.execute("UPDATE correspondence SET workflow_status='returned',status='draft' WHERE id=?", (corr_id,))
-        conn.execute("UPDATE workflow_steps SET status='cancelled' WHERE correspondence_id=? AND status='waiting'", (corr_id,))
-        create_notification(corr['created_by'], 'workflow',
-            f'↩️ مراسلتك تحتاج تعديل: {corr["ref_num"]}',
-            f'ملاحظة المراجع: {note or "يرجى المراجعة والتعديل"}',
-            url_for('view_correspondence', cid=corr_id), conn)
-        flash('تم إرجاع المراسلة للمُنشئ للتعديل','info')
+        # ── إعادة للمُنشئ للتعديل ──
+        conn.execute(
+            "UPDATE correspondence SET workflow_status='returned',status='returned' WHERE id=?",
+            (corr_id,))
+        conn.execute(
+            "UPDATE workflow_steps SET status='cancelled' "
+            "WHERE correspondence_id=? AND status='waiting'",
+            (corr_id,))
+        try:
+            create_notification(
+                corr['created_by'], 'workflow_returned',
+                f'↩️ مراسلتك تحتاج تعديل: {corr["ref_num"]}',
+                f'ملاحظة المراجع: {note or "يرجى المراجعة والتعديل"} | بواسطة: {session.get("full_name","")}',
+                url_for('view_correspondence', cid=corr_id), conn)
+        except Exception: pass
+        flash('تم إرجاع المراسلة للمُنشئ للتعديل', 'info')
 
     else:
         # -- موافقة: انتقل للخطوة التالية --
@@ -1800,13 +1988,46 @@ def delete_user(uid):
 @app.route('/notifications')
 @login_required
 def notifications():
-    conn = get_db()
-    notifs = conn.execute("SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 50",
-                          (session['user_id'],)).fetchall()
-    conn.execute("UPDATE notifications SET is_read=1,read_at=? WHERE user_id=? AND is_read=0",
-                 (now(), session['user_id']))
-    conn.commit(); conn.close()
-    return render_template('notifications.html', notifs=notifs)
+    conn   = get_db()
+    uid    = session['user_id']
+    # جلب الإشعارات مع ترتيب حسب الأهمية: غير مقروءة أولاً ثم الأحدث
+    notifs = conn.execute(
+        """SELECT n.*
+           FROM notifications n
+           WHERE n.user_id=?
+           ORDER BY
+               n.is_read ASC,
+               CASE n.type
+                 WHEN 'workflow'           THEN 1
+                 WHEN 'new_correspondence' THEN 2
+                 WHEN 'new_draft'          THEN 3
+                 ELSE 4
+               END,
+               n.created_at DESC
+           LIMIT 100""",
+        (uid,)).fetchall()
+
+    # إحصاء حسب النوع
+    approval_notifs = [n for n in notifs
+                       if n['type'] in ('workflow', 'new_correspondence')]
+    draft_notifs    = [n for n in notifs if n['type'] == 'new_draft']
+    other_notifs    = [n for n in notifs
+                       if n['type'] not in ('workflow', 'new_correspondence', 'new_draft')]
+
+    unread = sum(1 for n in notifs if not n['is_read'])
+
+    # تحديد الكل كمقروء
+    conn.execute(
+        "UPDATE notifications SET is_read=1, read_at=? WHERE user_id=? AND is_read=0",
+        (now(), uid))
+    conn.commit()
+    conn.close()
+    return render_template('notifications.html',
+        notifs=notifs,
+        approval_notifs=approval_notifs,
+        draft_notifs=draft_notifs,
+        other_notifs=other_notifs,
+        unread=unread)
 
 
 # ======================================================
@@ -2923,7 +3144,22 @@ def verify_document(doc_hash):
 @app.route('/api/notifications/count')
 @login_required
 def api_notif_count():
-    return jsonify({'count': get_unread_count()})
+    conn   = get_db()
+    uid    = session['user_id']
+    rows   = conn.execute(
+        "SELECT type, COUNT(*) as c FROM notifications "
+        "WHERE user_id=? AND is_read=0 GROUP BY type",
+        (uid,)).fetchall()
+    conn.close()
+    total    = sum(r['c'] for r in rows)
+    approval = sum(r['c'] for r in rows
+                   if r['type'] in ('workflow', 'new_correspondence'))
+    return jsonify({
+        'count':    total,
+        'approval': approval,
+        'draft':    sum(r['c'] for r in rows if r['type'] == 'new_draft'),
+        'other':    total - approval,
+    })
 
 @app.route('/api/notifications/mark-read', methods=['POST'])
 @login_required
@@ -2932,6 +3168,55 @@ def api_mark_read():
     conn.execute("UPDATE notifications SET is_read=1,read_at=? WHERE user_id=?",(now(),session['user_id']))
     conn.commit(); conn.close()
     return jsonify({'ok':True})
+
+@app.route('/api/correspondence/pending')
+@login_required
+def api_pending_correspondence():
+    """API يُرجع المعاملات المعلقة مصنفةً حسب النوع للمستخدم الحالي."""
+    conn = get_db()
+    uid  = session['user_id']
+    cid  = session['company_id']
+
+    # معاملات تحتاج اعتمادي
+    needs_my_approval = conn.execute("""
+        SELECT c.id, c.ref_num, c.subject, c.priority, c.type,
+               c.created_at, ws.step_name, ws.due_date,
+               u.full_name as creator_name
+        FROM workflow_steps ws
+        JOIN correspondence c ON ws.correspondence_id = c.id
+        LEFT JOIN users u ON c.created_by = u.id
+        WHERE ws.assigned_to=? AND ws.status='pending'
+        AND c.company_id=? AND c.is_deleted=0
+        ORDER BY CASE c.priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 ELSE 3 END
+        LIMIT 50""", (uid, cid)).fetchall()
+
+    # مسوداتي
+    my_drafts = conn.execute("""
+        SELECT c.id, c.ref_num, c.subject, c.priority, c.type, c.updated_at
+        FROM correspondence c
+        WHERE c.company_id=? AND c.created_by=?
+        AND c.status='draft' AND c.is_deleted=0
+        ORDER BY c.updated_at DESC LIMIT 20""", (cid, uid)).fetchall()
+
+    # معاملاتي المُعادة
+    returned = conn.execute("""
+        SELECT c.id, c.ref_num, c.subject, c.priority, c.type, c.updated_at
+        FROM correspondence c
+        WHERE c.company_id=? AND c.created_by=?
+        AND c.status='returned' AND c.is_deleted=0
+        ORDER BY c.updated_at DESC LIMIT 20""", (cid, uid)).fetchall()
+
+    conn.close()
+    return jsonify({
+        'needs_approval': [dict(r) for r in needs_my_approval],
+        'drafts':         [dict(r) for r in my_drafts],
+        'returned':       [dict(r) for r in returned],
+        'counts': {
+            'needs_approval': len(needs_my_approval),
+            'drafts':         len(my_drafts),
+            'returned':       len(returned),
+        }
+    })
 
 @app.route('/api/contacts/search')
 @login_required
