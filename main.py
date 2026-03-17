@@ -101,7 +101,7 @@ def admin_required(f):
     @wraps(f)
     def d(*a,**k):
         if 'user_id' not in session: return redirect(url_for('login'))
-        if session.get('role') not in ('super_admin','admin'):
+        if session.get('role') not in ('super_admin','admin','director'):
             flash('هذه الصفحة متاحة للمدير فقط','error')
             return redirect(url_for('dashboard'))
         return f(*a,**k)
@@ -111,7 +111,7 @@ def manager_required(f):
     @wraps(f)
     def d(*a,**k):
         if 'user_id' not in session: return redirect(url_for('login'))
-        if session.get('role') not in ('super_admin','admin','manager'):
+        if session.get('role') not in ('super_admin','admin','director','branch_manager','manager'):
             flash('صلاحية غير كافية','error')
             return redirect(url_for('dashboard'))
         return f(*a,**k)
@@ -145,8 +145,8 @@ def inject_globals():
         },
         'role':       session.get('role','user'),
         'is_super':   session.get('role') == 'super_admin',
-        'is_admin':   session.get('role') in ('super_admin','admin'),
-        'is_manager': session.get('role') in ('super_admin','admin','manager'),
+        'is_admin':   session.get('role') in ('super_admin','admin','director'),
+        'is_manager': session.get('role') in ('super_admin','admin','director','branch_manager','manager'),
         'can_delete': can_delete(),
         'unread':     get_unread_count(),
         'pending_wf': get_pending_workflow_count(),
@@ -931,19 +931,40 @@ def _create_workflow_steps(conn, corr_id, wf_def, company_id, creator_id):
         users_by_role[role].append(u['id'])
 
     def pick_user(role):
-        """اختر مستخدم مناسب للدور — تجنب تعيين المُنشئ لنفسه في مرحلة المراجعة"""
+        """
+        اختر مستخدم مناسب للدور في سير العمل الهرمي
+        التسلسل الهرمي: user → manager → branch_manager → director → admin → super_admin
+        """
+        # محاولة الدور المطلوب أولاً
         candidates = users_by_role.get(role, [])
+
+        # Fallback هرمي إذا لم يوجد أحد بالدور المطلوب
         if not candidates:
-            # fallback: أي admin
-            candidates = users_by_role.get('admin', []) or users_by_role.get('super_admin', [])
+            fallback_chain = {
+                'user':           ['manager','branch_manager','director','admin'],
+                'manager':        ['branch_manager','director','admin'],
+                'branch_manager': ['director','admin'],
+                'director':       ['admin','super_admin'],
+                'admin':          ['super_admin'],
+            }
+            for fallback_role in fallback_chain.get(role, ['admin','super_admin']):
+                candidates = users_by_role.get(fallback_role, [])
+                if candidates:
+                    break
+
+        # تجنب تعيين المُنشئ لنفسه إن أمكن
         for uid in candidates:
             if uid != creator_id:
                 return uid
-        return candidates[0] if candidates else None
+        return candidates[0] if candidates else creator_id
 
     for i, step in enumerate(steps):
         role     = step.get('role', 'manager')
-        assigned = creator_id if i == 0 else pick_user(role)
+        # الخطوة الأولى: تُعيَّن لأول مراجع بالدور المطلوب (ليس المنشئ)
+        # إذا لم يوجد مراجع آخر، تُعيَّن للمنشئ
+        assigned = pick_user(role)
+        if not assigned:
+            assigned = creator_id
         status   = 'pending' if i == 0 else 'waiting'
         due      = _calc_due_date(24) if i == 0 else None
 
@@ -955,13 +976,13 @@ def _create_workflow_steps(conn, corr_id, wf_def, company_id, creator_id):
              step.get('action', step.get('desc','review')), assigned, role,
              status, due, now()))
 
-        # إشعار المسؤول عن الخطوة الأولى
-        if i == 0 and assigned and assigned != creator_id:
-            corr = conn.execute("SELECT ref_num,subject FROM correspondence WHERE id=?", (corr_id,)).fetchone()
-            if corr:
+        # إشعار المسؤول عن الخطوة الأولى فوراً
+        if i == 0 and assigned:
+            corr_row = conn.execute("SELECT ref_num,subject FROM correspondence WHERE id=?", (corr_id,)).fetchone()
+            if corr_row:
                 create_notification(assigned, 'workflow',
-                    f'🔔 يتطلب مراجعتك: {corr["ref_num"]}',
-                    f'{step["name"]}: {corr["subject"]}',
+                    f'🔔 مراسلة تنتظر {step["name"]}: {corr_row["ref_num"]}',
+                    f'الموضوع: {corr_row["subject"]} | الدور المطلوب: {role}',
                     f'/correspondence/{corr_id}', conn)
 
     conn.execute("UPDATE correspondence SET workflow_id=?,workflow_status='in_review' WHERE id=?",
@@ -998,6 +1019,13 @@ def download_attachment(att_id):
     if not att: flash('المرفق غير موجود','error'); return redirect(url_for('dashboard'))
     path = os.path.join(UPLOAD_FOLDER, att['filename'])
     return send_file(path, as_attachment=True, download_name=att['original_name'])
+
+@app.route('/uploads/<filename>')
+def serve_upload(filename):
+    """خدمة الملفات المرفوعة — شعارات الشركات والمرفقات"""
+    from flask import send_from_directory
+    safe_name = os.path.basename(filename)  # منع path traversal
+    return send_from_directory(UPLOAD_FOLDER, safe_name)
 
 @app.route('/attachment/<att_id>/delete', methods=['POST'])
 @login_required
@@ -3171,6 +3199,106 @@ def set_default_workflow(wf_id):
     conn.commit(); conn.close()
     flash('✅ تم تعيين سير العمل الافتراضي', 'success')
     return redirect(url_for('settings') + '#workflow')
+
+@app.route('/settings/workflow/new', methods=['GET','POST'])
+@admin_required
+def new_workflow():
+    """إنشاء مسار اعتماد جديد"""
+    conn = get_db()
+    cid  = session['company_id']
+    # جلب المستخدمين لتعيينهم على الخطوات
+    users_list = conn.execute(
+        "SELECT id,full_name,role,job_title FROM users WHERE company_id=? AND is_active=1 ORDER BY role,full_name",
+        (cid,)).fetchall()
+
+    if request.method == 'POST':
+        name     = request.form.get('name','').strip()
+        category = request.form.get('category','default')
+        # بناء الخطوات من النموذج
+        steps = []
+        step_names  = request.form.getlist('step_name')
+        step_roles  = request.form.getlist('step_role')
+        step_actions= request.form.getlist('step_action')
+        for i,(sn,sr,sa) in enumerate(zip(step_names,step_roles,step_actions),1):
+            if sn.strip():
+                steps.append({
+                    "step":     i,
+                    "name":     sn.strip(),
+                    "role":     sr,
+                    "action":   sa,
+                    "mandatory": True
+                })
+        if not name or not steps:
+            flash('يرجى إدخال اسم سير العمل وخطوة واحدة على الأقل','error')
+            conn.close()
+            return render_template('workflow_form.html', users=users_list, form=request.form)
+
+        wf_id = new_id()
+        # إذا لم يكن هناك سير عمل افتراضي، اجعل هذا هو الافتراضي
+        existing = conn.execute(
+            "SELECT COUNT(*) as c FROM workflow_definitions WHERE company_id=? AND is_default=1",(cid,)).fetchone()['c']
+        is_default = 1 if existing == 0 else (1 if request.form.get('is_default') else 0)
+        if is_default:
+            conn.execute("UPDATE workflow_definitions SET is_default=0 WHERE company_id=?",(cid,))
+
+        conn.execute("""INSERT INTO workflow_definitions
+            (id,company_id,name,category,steps_json,is_active,is_default,created_at,created_by)
+            VALUES (?,?,?,?,?,1,?,?,?)""",
+            (wf_id,cid,name,category,json.dumps(steps,ensure_ascii=False),
+             is_default,now(),session['user_id']))
+        conn.commit(); conn.close()
+        flash(f'✅ تم إنشاء مسار الاعتماد "{name}" بنجاح','success')
+        return redirect(url_for('settings') + '#workflow')
+
+    conn.close()
+    return render_template('workflow_form.html', users=users_list, form={})
+
+@app.route('/settings/workflow/<wf_id>/edit', methods=['GET','POST'])
+@admin_required
+def edit_workflow(wf_id):
+    """تعديل مسار اعتماد"""
+    conn = get_db()
+    cid  = session['company_id']
+    wf   = conn.execute("SELECT * FROM workflow_definitions WHERE id=? AND company_id=?",
+                        (wf_id,cid)).fetchone()
+    if not wf:
+        flash('مسار الاعتماد غير موجود','error')
+        conn.close()
+        return redirect(url_for('settings') + '#workflow')
+    users_list = conn.execute(
+        "SELECT id,full_name,role,job_title FROM users WHERE company_id=? AND is_active=1 ORDER BY role,full_name",
+        (cid,)).fetchall()
+
+    if request.method == 'POST':
+        name     = request.form.get('name','').strip()
+        category = request.form.get('category','default')
+        steps = []
+        step_names  = request.form.getlist('step_name')
+        step_roles  = request.form.getlist('step_role')
+        step_actions= request.form.getlist('step_action')
+        for i,(sn,sr,sa) in enumerate(zip(step_names,step_roles,step_actions),1):
+            if sn.strip():
+                steps.append({"step":i,"name":sn.strip(),"role":sr,"action":sa,"mandatory":True})
+        if not name or not steps:
+            flash('يرجى إدخال اسم وخطوة واحدة على الأقل','error')
+            conn.close()
+            return render_template('workflow_form.html', wf=dict(wf), users=users_list, form=request.form)
+
+        is_default = 1 if request.form.get('is_default') else 0
+        if is_default:
+            conn.execute("UPDATE workflow_definitions SET is_default=0 WHERE company_id=?",(cid,))
+        conn.execute("""UPDATE workflow_definitions
+            SET name=?,category=?,steps_json=?,is_default=? WHERE id=? AND company_id=?""",
+            (name,category,json.dumps(steps,ensure_ascii=False),is_default,wf_id,cid))
+        conn.commit(); conn.close()
+        flash('✅ تم تحديث مسار الاعتماد','success')
+        return redirect(url_for('settings') + '#workflow')
+
+    conn.close()
+    return render_template('workflow_form.html',
+                           wf=dict(wf), users=users_list,
+                           steps=json.loads(wf['steps_json']) if wf['steps_json'] else [],
+                           form=dict(wf))
 
 @app.route('/super-admin/check-subscriptions')
 @admin_required

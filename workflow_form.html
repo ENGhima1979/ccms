@@ -1,0 +1,329 @@
+{% extends "base.html" %}
+{% set is_edit = wf is defined and wf %}
+{% block title %}{{ 'تعديل مسار الاعتماد' if is_edit else 'مسار اعتماد جديد' }}{% endblock %}
+{% block page_title %}{{ '✏️ تعديل مسار الاعتماد' if is_edit else '➕ مسار اعتماد جديد' }}{% endblock %}
+{% block page_sub %}تحديد خطوات الاعتماد الهرمية للمراسلات{% endblock %}
+{% block header_actions %}<a href="{{ url_for('settings') }}#workflow" class="btn btn-ghost btn-sm">← رجوع للإعدادات</a>{% endblock %}
+{% block content %}
+<div style="max-width:860px;margin:0 auto">
+
+  <form method="POST" id="wfForm">
+
+    <!-- معلومات سير العمل -->
+    <div class="card mb-4">
+      <div class="card-header"><h6 class="mb-0">📋 بيانات مسار الاعتماد</h6></div>
+      <div class="card-body">
+        <div class="form-grid">
+          <div class="form-group form-full">
+            <label class="form-label"><span class="req">*</span> اسم مسار الاعتماد</label>
+            <input name="name" class="form-control" value="{{ form.name or '' }}" required
+                   placeholder="مثال: مسار الصادر الرسمي">
+          </div>
+          <div class="form-group">
+            <label class="form-label">التصنيف</label>
+            <select name="category" class="form-control">
+              <option value="default" {% if (form.category or 'default')=='default' %}selected{% endif %}>افتراضي — لجميع المراسلات</option>
+              <option value="out"     {% if form.category=='out'      %}selected{% endif %}>📤 صادر فقط</option>
+              <option value="in"      {% if form.category=='in'       %}selected{% endif %}>📥 وارد فقط</option>
+              <option value="internal"{% if form.category=='internal' %}selected{% endif %}>🔄 داخلي فقط</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">الحالة</label>
+            <label class="form-check" style="margin-top:12px">
+              <input type="checkbox" name="is_default" value="1"
+                     {% if form.is_default %}checked{% endif %}>
+              <span>تعيين كمسار افتراضي للشركة</span>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- المسار الهرمي الجاهز -->
+    <div class="card mb-3" style="border-color:rgba(0,180,216,.3)">
+      <div class="card-header" style="background:rgba(0,180,216,.08)">
+        <h6 class="mb-0">⚡ قوالب هرمية جاهزة — اضغط لتطبيق</h6>
+      </div>
+      <div class="card-body" style="display:flex;gap:10px;flex-wrap:wrap">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="applyTemplate('basic')">
+          📄 أساسي (مراجعة → اعتماد)
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="applyTemplate('standard')">
+          🏢 قياسي (مدخل → مشرف → مدير)
+        </button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="applyTemplate('full')">
+          🏗️ هرمي كامل (5 مستويات)
+        </button>
+      </div>
+    </div>
+
+    <!-- خطوات سير العمل -->
+    <div class="card mb-4">
+      <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+        <h6 class="mb-0">🔗 خطوات مسار الاعتماد</h6>
+        <button type="button" class="btn btn-electric btn-sm" onclick="addStep()">＋ إضافة خطوة</button>
+      </div>
+      <div class="card-body" id="stepsContainer">
+
+        {% if steps %}
+          {% for s in steps %}
+          <div class="step-row" id="step-{{ loop.index }}" style="background:rgba(0,119,182,.06);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;position:relative">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <div style="width:30px;height:30px;border-radius:50%;background:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#000;flex-shrink:0">{{ loop.index }}</div>
+              <span style="font-size:12px;color:var(--text3)">خطوة {{ loop.index }}</span>
+              <button type="button" onclick="removeStep(this)" style="margin-right:auto;background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer;line-height:1">×</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">اسم الخطوة</label>
+                <input name="step_name" class="form-control" value="{{ s.name }}" placeholder="مثال: مراجعة مدير المشروع" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">الدور المطلوب</label>
+                <select name="step_role" class="form-control">
+                  <option value="user"           {% if s.role=='user'           %}selected{% endif %}>👤 مستخدم عادي</option>
+                  <option value="manager"        {% if s.role=='manager'        %}selected{% endif %}>📋 مشرف / مدير مشروع</option>
+                  <option value="branch_manager" {% if s.role=='branch_manager' %}selected{% endif %}>🏢 مدير فرع</option>
+                  <option value="director"       {% if s.role=='director'       %}selected{% endif %}>🎯 مدير مشاريع</option>
+                  <option value="admin"          {% if s.role=='admin'          %}selected{% endif %}>🔑 المدير التنفيذي</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">الإجراء المطلوب</label>
+                <select name="step_action" class="form-control">
+                  <option value="review"   {% if s.action=='review'   %}selected{% endif %}>🔍 مراجعة</option>
+                  <option value="approve"  {% if s.action=='approve'  %}selected{% endif %}>✅ اعتماد</option>
+                  <option value="sign"     {% if s.action=='sign'     %}selected{% endif %}>✍️ توقيع</option>
+                  <option value="send"     {% if s.action=='send'     %}selected{% endif %}>📤 إرسال</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <!-- خطوة افتراضية -->
+          <div class="step-row" id="step-1" style="background:rgba(0,119,182,.06);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;position:relative">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <div style="width:30px;height:30px;border-radius:50%;background:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#000;flex-shrink:0">1</div>
+              <span style="font-size:12px;color:var(--text3)">خطوة 1</span>
+              <button type="button" onclick="removeStep(this)" style="margin-right:auto;background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer;line-height:1">×</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="form-label">اسم الخطوة</label>
+                <input name="step_name" class="form-control" placeholder="مثال: مراجعة مدير المشروع" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">الدور المطلوب</label>
+                <select name="step_role" class="form-control">
+                  <option value="user">👤 مستخدم عادي</option>
+                  <option value="manager" selected>📋 مشرف / مدير مشروع</option>
+                  <option value="branch_manager">🏢 مدير فرع</option>
+                  <option value="director">🎯 مدير مشاريع</option>
+                  <option value="admin">🔑 المدير التنفيذي</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">الإجراء المطلوب</label>
+                <select name="step_action" class="form-control">
+                  <option value="review" selected>🔍 مراجعة</option>
+                  <option value="approve">✅ اعتماد</option>
+                  <option value="sign">✍️ توقيع</option>
+                  <option value="send">📤 إرسال</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        {% endif %}
+
+      </div><!-- end card-body -->
+    </div>
+
+    <!-- مخطط سير العمل التوضيحي -->
+    <div class="card mb-4" id="wfPreview">
+      <div class="card-header"><h6 class="mb-0">👁️ معاينة مسار الاعتماد</h6></div>
+      <div class="card-body">
+        <div id="previewChain" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;direction:rtl"></div>
+      </div>
+    </div>
+
+    <!-- أزرار الحفظ -->
+    <div style="display:flex;gap:10px">
+      <button type="submit" class="btn btn-electric">{{ '💾 حفظ التعديلات' if is_edit else '✅ إنشاء مسار الاعتماد' }}</button>
+      <a href="{{ url_for('settings') }}#workflow" class="btn btn-ghost">إلغاء</a>
+    </div>
+
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let stepCount = document.querySelectorAll('.step-row').length || 1;
+
+const roleLabels = {
+  'user':           '👤 مستخدم',
+  'manager':        '📋 مشرف',
+  'branch_manager': '🏢 مدير فرع',
+  'director':       '🎯 مدير مشاريع',
+  'admin':          '🔑 المدير التنفيذي'
+};
+const actionLabels = {
+  'review':  '🔍 مراجعة',
+  'approve': '✅ اعتماد',
+  'sign':    '✍️ توقيع',
+  'send':    '📤 إرسال'
+};
+
+function addStep(){
+  stepCount++;
+  const container = document.getElementById('stepsContainer');
+  const div = document.createElement('div');
+  div.className = 'step-row';
+  div.id = 'step-' + stepCount;
+  div.style.cssText = 'background:rgba(0,119,182,.06);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px;position:relative';
+  div.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <div style="width:30px;height:30px;border-radius:50%;background:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#000;flex-shrink:0">${stepCount}</div>
+      <span style="font-size:12px;color:var(--text3)">خطوة ${stepCount}</span>
+      <button type="button" onclick="removeStep(this)" style="margin-right:auto;background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer;line-height:1">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label class="form-label">اسم الخطوة</label>
+        <input name="step_name" class="form-control" placeholder="مثال: اعتماد المدير" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">الدور المطلوب</label>
+        <select name="step_role" class="form-control">
+          <option value="user">👤 مستخدم عادي</option>
+          <option value="manager" selected>📋 مشرف / مدير مشروع</option>
+          <option value="branch_manager">🏢 مدير فرع</option>
+          <option value="director">🎯 مدير مشاريع</option>
+          <option value="admin">🔑 المدير التنفيذي</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">الإجراء المطلوب</label>
+        <select name="step_action" class="form-control">
+          <option value="review">🔍 مراجعة</option>
+          <option value="approve" selected>✅ اعتماد</option>
+          <option value="sign">✍️ توقيع</option>
+          <option value="send">📤 إرسال</option>
+        </select>
+      </div>
+    </div>`;
+  container.appendChild(div);
+  renumberSteps(); updatePreview();
+}
+
+function removeStep(btn){
+  const rows = document.querySelectorAll('.step-row');
+  if(rows.length <= 1){ alert('يجب أن يكون هناك خطوة واحدة على الأقل'); return; }
+  btn.closest('.step-row').remove();
+  renumberSteps(); updatePreview();
+}
+
+function renumberSteps(){
+  document.querySelectorAll('.step-row').forEach((row,i)=>{
+    const numEl = row.querySelector('div > div:first-child');
+    if(numEl) numEl.textContent = i+1;
+    const label = row.querySelector('span');
+    if(label) label.textContent = 'خطوة '+(i+1);
+  });
+}
+
+function updatePreview(){
+  const chain = document.getElementById('previewChain');
+  chain.innerHTML = '';
+  // المُنشئ
+  chain.innerHTML += `<div style="text-align:center;padding:8px 12px;background:rgba(6,255,165,.1);border:1px solid var(--mint);border-radius:8px;font-size:11px"><div style="font-size:16px">✏️</div><div style="color:var(--mint);font-weight:700">مدخل البيانات</div><div style="color:var(--text3);font-size:10px">يُنشئ المراسلة</div></div>`;
+
+  const rows = document.querySelectorAll('.step-row');
+  rows.forEach((row,i)=>{
+    const name   = row.querySelector('[name="step_name"]').value || 'خطوة '+(i+1);
+    const role   = row.querySelector('[name="step_role"]').value;
+    const action = row.querySelector('[name="step_action"]').value;
+    chain.innerHTML += `<div style="color:var(--sky);font-size:20px;padding:0 4px">←</div>`;
+    chain.innerHTML += `<div style="text-align:center;padding:8px 12px;background:rgba(0,119,182,.1);border:1px solid var(--border);border-radius:8px;font-size:11px;min-width:90px">
+      <div style="font-size:16px">${i===rows.length-1?'✅':'🔍'}</div>
+      <div style="color:var(--sky);font-weight:700">${name}</div>
+      <div style="color:var(--text3);font-size:10px">${roleLabels[role]||role}</div>
+      <div style="color:var(--gold);font-size:10px">${actionLabels[action]||action}</div>
+    </div>`;
+  });
+}
+
+// قوالب جاهزة
+const TEMPLATES = {
+  basic: [
+    {name:'مراجعة المشرف', role:'manager',  action:'review'},
+    {name:'اعتماد المدير', role:'admin',    action:'approve'}
+  ],
+  standard: [
+    {name:'مراجعة مدير المشروع', role:'manager',  action:'review'},
+    {name:'اعتماد مدير الفرع',   role:'branch_manager', action:'approve'},
+    {name:'اعتماد المدير التنفيذي', role:'admin', action:'approve'}
+  ],
+  full: [
+    {name:'مراجعة مدير المشروع',   role:'manager',        action:'review'},
+    {name:'اعتماد مدير الفرع',     role:'branch_manager', action:'approve'},
+    {name:'اعتماد مدير المشاريع',  role:'director',       action:'approve'},
+    {name:'توقيع المدير التنفيذي', role:'admin',          action:'sign'},
+    {name:'إرسال',                 role:'manager',        action:'send'}
+  ]
+};
+
+function applyTemplate(tpl){
+  const data = TEMPLATES[tpl];
+  if(!data) return;
+  const container = document.getElementById('stepsContainer');
+  container.innerHTML = '';
+  stepCount = 0;
+  data.forEach(s => {
+    stepCount++;
+    const div = document.createElement('div');
+    div.className = 'step-row';
+    div.style.cssText = 'background:rgba(0,119,182,.06);border:1px solid var(--border);border-radius:var(--r);padding:16px;margin-bottom:12px';
+    div.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <div style="width:30px;height:30px;border-radius:50%;background:var(--sky);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#000;flex-shrink:0">${stepCount}</div>
+        <span style="font-size:12px;color:var(--text3)">خطوة ${stepCount}</span>
+        <button type="button" onclick="removeStep(this)" style="margin-right:auto;background:none;border:none;color:var(--danger);font-size:18px;cursor:pointer;line-height:1">×</button>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">اسم الخطوة</label>
+          <input name="step_name" class="form-control" value="${s.name}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">الدور المطلوب</label>
+          <select name="step_role" class="form-control">
+            <option value="user"           ${s.role==='user'?'selected':''}>👤 مستخدم عادي</option>
+            <option value="manager"        ${s.role==='manager'?'selected':''}>📋 مشرف / مدير مشروع</option>
+            <option value="branch_manager" ${s.role==='branch_manager'?'selected':''}>🏢 مدير فرع</option>
+            <option value="director"       ${s.role==='director'?'selected':''}>🎯 مدير مشاريع</option>
+            <option value="admin"          ${s.role==='admin'?'selected':''}>🔑 المدير التنفيذي</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">الإجراء المطلوب</label>
+          <select name="step_action" class="form-control">
+            <option value="review"  ${s.action==='review'?'selected':''}>🔍 مراجعة</option>
+            <option value="approve" ${s.action==='approve'?'selected':''}>✅ اعتماد</option>
+            <option value="sign"    ${s.action==='sign'?'selected':''}>✍️ توقيع</option>
+            <option value="send"    ${s.action==='send'?'selected':''}>📤 إرسال</option>
+          </select>
+        </div>
+      </div>`;
+    container.appendChild(div);
+  });
+  updatePreview();
+}
+
+// تحديث المعاينة عند أي تغيير
+document.getElementById('stepsContainer').addEventListener('input', updatePreview);
+updatePreview();
+</script>
+{% endblock %}

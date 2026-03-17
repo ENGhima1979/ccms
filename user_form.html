@@ -30,10 +30,12 @@
       <div class="form-group">
         <label class="form-label">الصلاحية</label>
         <select name="role" class="form-control" id="roleSelect" onchange="onRoleChange()">
-          <option value="user"        {% if (form.role or 'user')=='user'        %}selected{% endif %}>👤 مستخدم عادي</option>
-          <option value="manager"     {% if form.role=='manager'     %}selected{% endif %}>📋 مشرف / مدير قسم</option>
-          <option value="admin"       {% if form.role=='admin'       %}selected{% endif %}>🔑 مدير النظام</option>
-          <option value="super_admin" {% if form.role=='super_admin' %}selected{% endif %}>👑 مدير عام</option>
+          <option value="user"           {% if (form.role or 'user')=='user'           %}selected{% endif %}>👤 مدخل بيانات (مستخدم عادي)</option>
+          <option value="manager"        {% if form.role=='manager'        %}selected{% endif %}>📋 مشرف / مدير مشروع</option>
+          <option value="branch_manager" {% if form.role=='branch_manager' %}selected{% endif %}>🏢 مدير فرع</option>
+          <option value="director"       {% if form.role=='director'       %}selected{% endif %}>🎯 مدير مشاريع</option>
+          <option value="admin"          {% if form.role=='admin'          %}selected{% endif %}>🔑 مدير تنفيذي</option>
+          <option value="super_admin"    {% if form.role=='super_admin'    %}selected{% endif %}>👑 مالك النظام</option>
         </select>
       </div>
       {% if not is_edit %}

@@ -102,6 +102,7 @@ input,select,textarea,button{font-family:inherit}
   background:rgba(5,15,42,.85);backdrop-filter:blur(16px);
   border-bottom:1px solid var(--border);z-index:150;
   display:flex;align-items:center;padding:0 24px;gap:16px}
+.header-title{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
 .header-title h1{font-size:18px;font-weight:800;color:var(--text)}
 .header-title p{font-size:11px;color:var(--text3);margin-top:1px}
 .header-actions{margin-right:auto;display:flex;align-items:center;gap:10px}
@@ -423,7 +424,8 @@ textarea.form-control{min-height:120px;resize:vertical}
 <aside class="sidebar" id="sidebar">
   <div class="sb-logo">
     <div class="sb-logo-icon">
-      {% if company.logo_path %}<img src="/static/{{ company.logo_path }}" style="width:30px;height:30px;object-fit:contain;border-radius:6px" alt="">
+      {% if company.logo_path %}
+        <img src="/uploads/{{ company.logo_path }}" style="width:38px;height:38px;object-fit:contain;border-radius:8px" alt="{{ company.name }}">
       {% else %}🏢{% endif %}
     </div>
     <div class="sb-logo-text">
@@ -450,9 +452,9 @@ textarea.form-control{min-height:120px;resize:vertical}
     ═══════════════════════════════════════════ #}
     {% set role = session.get('role','user') %}
     {% set is_super = role == 'super_admin' %}
-    {% set is_admin = role in ('super_admin','admin') %}
-    {% set is_manager = role in ('super_admin','admin','manager') %}
-    {% set is_user = role in ('super_admin','admin','manager','user') %}
+    {% set is_admin = role in ('super_admin','admin','director') %}
+    {% set is_manager = role in ('super_admin','admin','director','branch_manager','manager') %}
+    {% set is_user = true %}
 
     {# ── الرئيسية (الكل) ── #}
     {# ══════════════════════════════════════════════════ #}
@@ -604,8 +606,15 @@ textarea.form-control{min-height:120px;resize:vertical}
 <header class="header">
   <button class="hdr-btn mobile-menu-btn" id="menuToggle" onclick="toggleSidebar()" title="القائمة">☰</button>
   <div class="header-title">
-    <h1>{% block page_title %}الرئيسية{% endblock %}</h1>
-    <p>{% block page_sub %}نظام إدارة الاتصالات الإدارية{% endblock %}</p>
+    {% if company.logo_path %}
+    <img src="/uploads/{{ company.logo_path }}"
+         style="width:34px;height:34px;object-fit:contain;border-radius:6px;margin-left:10px;flex-shrink:0"
+         alt="{{ company.name }}">
+    {% endif %}
+    <div>
+      <h1>{% block page_title %}الرئيسية{% endblock %}</h1>
+      <p>{% block page_sub %}{{ company.name or 'نظام إدارة الاتصالات الإدارية' }}{% endblock %}</p>
+    </div>
   </div>
   <div class="header-actions">
     {% block header_actions %}{% endblock %}

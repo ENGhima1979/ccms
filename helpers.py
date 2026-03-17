@@ -86,14 +86,14 @@ def create_notification(user_id, type_, title, body=None, link=None, conn=None):
 
 # -- PDF Generation ------------------------------------
 def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True):
-    """Generate professional Arabic PDF - uses bundled font, no external dependencies"""
+    """Generate professional Arabic PDF with company logo"""
     import os, sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from arabic_utils import arabic_text as ar
     buffer = io.BytesIO()
-    
+
     BASE = os.path.dirname(os.path.abspath(__file__))
-    
+
     font_reg  = os.path.join(BASE, 'fonts', 'DejaVuSans.ttf')
     font_bold = os.path.join(BASE, 'fonts', 'DejaVuSans-Bold.ttf')
     try:
@@ -126,30 +126,74 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     s_ref    = S('ref', size=10, color=colors.grey, leading=16)
     s_subj   = S('subj', size=13, bold=True, color=colors.HexColor('#023e8a'), leading=22)
     s_sig    = S('sig', size=11, bold=True, leading=20)
-    
+
     story = []
-    
+
     co_name   = company.get('name','')
     co_phone  = company.get('phone','')
     co_email  = company.get('email','')
     co_addr   = company.get('address','')
     co_cr     = company.get('cr_number','')
-    
-    # --- HEADER ------------------------------------------
-    hdr_left = Paragraph(f"<b>{ar(co_name)}</b>", 
-                ParagraphStyle('hl', fontName=afb, fontSize=16, alignment=TA_RIGHT,
-                               textColor=primary, leading=22))
+    logo_path = company.get('logo_path','')
+
+    # --- HEADER with LOGO ------------------------------------------
+    # بناء عمود الشعار + اسم الشركة
+    logo_cell_items = []
+
+    # إضافة الشعار إذا وُجد
+    if logo_path:
+        # حاول المسارات المختلفة
+        possible_paths = [
+            os.path.join(BASE, 'instance', 'uploads', logo_path),
+            os.path.join(BASE, 'static', logo_path),
+            os.path.join(BASE, logo_path),
+        ]
+        logo_file = None
+        for lp in possible_paths:
+            if os.path.exists(lp):
+                logo_file = lp
+                break
+        if logo_file:
+            try:
+                from reportlab.platypus import Image as RLImage
+                from PIL import Image as PILImage
+                pil_img = PILImage.open(logo_file)
+                orig_w, orig_h = pil_img.size
+                # حجم الشعار: عرض 3cm، ارتفاع نسبي
+                logo_w = 3 * cm
+                logo_h = logo_w * (orig_h / orig_w)
+                if logo_h > 2.5 * cm:
+                    logo_h = 2.5 * cm
+                    logo_w = logo_h * (orig_w / orig_h)
+                rl_logo = RLImage(logo_file, width=logo_w, height=logo_h)
+                logo_cell_items.append(rl_logo)
+            except Exception:
+                pass
+
+    # اسم الشركة
+    logo_cell_items.append(
+        Paragraph(f"<b>{ar(co_name)}</b>",
+            ParagraphStyle('hl', fontName=afb, fontSize=16, alignment=TA_RIGHT,
+                           textColor=primary, leading=22, spaceAfter=2))
+    )
+
+    # دمج عناصر عمود الشعار
+    from reportlab.platypus import KeepTogether
+    logo_cell = KeepTogether(logo_cell_items)
+
+    # عمود بيانات الاتصال
     hdr_right_lines = []
     if co_phone: hdr_right_lines.append(f"{ar('هاتف')}: {co_phone}")
     if co_email: hdr_right_lines.append(f"{ar('بريد')}: {co_email}")
     if co_addr:  hdr_right_lines.append(ar(co_addr))
     if co_cr:    hdr_right_lines.append(f"{ar('س.ت')}: {co_cr}")
-    hdr_right = Paragraph("<br/>".join(hdr_right_lines),
+    hdr_right = Paragraph("<br/>".join(hdr_right_lines) if hdr_right_lines else ar(co_name),
                 ParagraphStyle('hr', fontName=af, fontSize=9, alignment=TA_RIGHT,
                                textColor=colors.grey, leading=15))
-    hdr = Table([[hdr_left, hdr_right]], colWidths=[9*cm, 8.4*cm])
+
+    hdr = Table([[logo_cell, hdr_right]], colWidths=[9*cm, 8.4*cm])
     hdr.setStyle(TableStyle([
-        ('VALIGN',(0,0),(-1,-1),'TOP'),
+        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
         ('LINEBELOW',(0,0),(-1,-1), 2.5, primary),
         ('BOTTOMPADDING',(0,0),(-1,-1), 10),
     ]))
@@ -159,7 +203,7 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     # --- REFERENCE BAR ----------------------------------
     priority_map = {'urgent':'⚡ عاجل','high':'▲ عالية','normal':'● عادية','low':'▽ منخفضة'}
     type_map     = {'out':'صادر','in':'وارد','internal':'داخلي'}
-    
+
     ref_data = [[
         Paragraph(f"<b>{ar('رقم المرجع')}</b><br/>{corr.get('ref_num','')}", s_ref),
         Paragraph(f"<b>{ar('التاريخ')}</b><br/>{corr.get('date','')}", s_ref),
@@ -170,8 +214,8 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
         ref_data[0].append(Paragraph(f"<b>{ar('المشروع')}</b><br/>{ar(corr['proj_name'])}", s_ref))
         ref_t = Table(ref_data, colWidths=[4.3*cm, 3.2*cm, 2.8*cm, 2.8*cm, 4.3*cm])
     else:
-        ref_t = Table(ref_data, colWidths=[4.5*cm, 3.5*cm, 3.5*cm, 3.5*cm + 1.8*cm])
-    
+        ref_t = Table(ref_data, colWidths=[4.5*cm, 3.5*cm, 3.5*cm, 5.3*cm])
+
     ref_t.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,-1), light_bg),
         ('BOX',(0,0),(-1,-1), 0.5, colors.HexColor('#90c7e8')),

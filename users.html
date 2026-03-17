@@ -26,7 +26,12 @@
         </td>
         <td>
           <span class="badge {% if u.role in ('admin','super_admin') %}badge-admin{% elif u.role=='manager' %}badge-out{% else %}badge-normal{% endif %}">
-            {{ '🔑 مدير' if u.role in ('admin','super_admin') else ('📋 مشرف' if u.role=='manager' else '👤 مستخدم') }}
+            {%- if u.role == 'super_admin' %}👑 مالك النظام
+            {%- elif u.role == 'admin' %}🔑 مدير تنفيذي
+            {%- elif u.role == 'director' %}🎯 مدير مشاريع
+            {%- elif u.role == 'branch_manager' %}🏢 مدير فرع
+            {%- elif u.role == 'manager' %}📋 مشرف/مدير مشروع
+            {%- else %}👤 مدخل بيانات{%- endif %}
           </span>
         </td>
         <td class="fs-12 text-muted">{{ u.dept_name or '—' }}</td>
