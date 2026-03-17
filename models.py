@@ -536,30 +536,29 @@ CREATE INDEX IF NOT EXISTS idx_intlog_co ON integration_logs(company_id, service
 --  Full-Text Search (FTS5)
 -- -----------------------------------------
 CREATE VIRTUAL TABLE IF NOT EXISTS corr_fts USING fts5(
-    correspondence_id UNINDEXED,
+    correspondence_id,
     ref_num,
     subject,
     body,
     party,
     action_required,
-    content='correspondence',
-    content_rowid='rowid'
+    tokenize="unicode61"
 );
 
 -- Triggers to keep FTS in sync
 CREATE TRIGGER IF NOT EXISTS corr_fts_insert AFTER INSERT ON correspondence BEGIN
-    INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
-    VALUES (new.id, new.ref_num, new.subject, new.body, new.party, new.action_required);
+    INSERT INTO corr_fts(correspondence_id,ref_num,subject,body,party,action_required)
+    VALUES (new.id,new.ref_num,new.subject,COALESCE(new.body,''),COALESCE(new.party,''),COALESCE(new.action_required,''));
 END;
 
 CREATE TRIGGER IF NOT EXISTS corr_fts_update AFTER UPDATE ON correspondence BEGIN
-    DELETE FROM corr_fts WHERE correspondence_id = old.id;
-    INSERT INTO corr_fts(correspondence_id, ref_num, subject, body, party, action_required)
-    VALUES (new.id, new.ref_num, new.subject, new.body, new.party, new.action_required);
+    DELETE FROM corr_fts WHERE correspondence_id=old.id;
+    INSERT INTO corr_fts(correspondence_id,ref_num,subject,body,party,action_required)
+    VALUES (new.id,new.ref_num,new.subject,COALESCE(new.body,''),COALESCE(new.party,''),COALESCE(new.action_required,''));
 END;
 
 CREATE TRIGGER IF NOT EXISTS corr_fts_delete AFTER DELETE ON correspondence BEGIN
-    DELETE FROM corr_fts WHERE correspondence_id = old.id;
+    DELETE FROM corr_fts WHERE correspondence_id=old.id;
 END;
 
 -- -----------------------------------------

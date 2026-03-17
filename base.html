@@ -449,9 +449,15 @@ textarea.form-control{min-height:120px;resize:vertical}
        user        → مراسلات + مشاريع + أرشيف فقط
     ═══════════════════════════════════════════ #}
     {% set role = session.get('role','user') %}
-    {% set is_super = role in ('super_admin','admin') %}
+    {% set is_super = role == 'super_admin' %}
     {% set is_admin = role in ('super_admin','admin') %}
     {% set is_manager = role in ('super_admin','admin','manager') %}
+    {% set is_user = role in ('super_admin','admin','manager','user') %}
+
+    {# ── الرئيسية (الكل) ── #}
+    {# ══════════════════════════════════════════════════ #}
+    {# القائمة الجانبية — الشاشات حسب دور المستخدم فقط  #}
+    {# ══════════════════════════════════════════════════ #}
 
     {# ── الرئيسية (الكل) ── #}
     <div class="sb-section">الرئيسية</div>
@@ -474,74 +480,65 @@ textarea.form-control{min-height:120px;resize:vertical}
     <a href="{{ url_for('internal') }}" class="sb-link {% if request.endpoint=='internal' %}active{% endif %}">
       <span class="sb-icon">🔄</span> المراسلات الداخلية
     </a>
+
+    {# مهام الموافقة (الكل — يرى عدد مهامه) #}
+    <a href="{{ url_for('my_workflow_tasks') }}" class="sb-link {% if request.endpoint=='my_workflow_tasks' %}active{% endif %}">
+      <span class="sb-icon">✅</span> مهام الموافقة
+      {% if pending_wf %}<span class="sb-badge warn">{{ pending_wf }}</span>{% endif %}
+    </a>
+
+    <a href="{{ url_for('advanced_search') }}" class="sb-link {% if request.endpoint=='advanced_search' %}active{% endif %}">
+      <span class="sb-icon">🔎</span> بحث متقدم
+    </a>
+
+    {# الأرشيف — مدير مشروع وأعلى #}
+    {% if is_manager %}
     <a href="{{ url_for('archive') }}" class="sb-link {% if request.endpoint=='archive' %}active{% endif %}">
       <span class="sb-icon">🗄️</span> الأرشيف
     </a>
-    <a href="{{ url_for('my_workflow_tasks') }}" class="sb-link {% if request.endpoint=='my_workflow_tasks' %}active{% endif %}">
-      <span class="sb-icon">🔄</span> مهام الموافقة
-      {% set wf_count = pending_wf %}
-      {% if wf_count %}<span class="sb-badge warn">{{ wf_count }}</span>{% endif %}
-    </a>
-    <a href="{{ url_for('advanced_search') }}" class="sb-link {% if request.endpoint=='advanced_search' %}active{% endif %}">
-      <span class="sb-icon">🔎</span> بحث متقدم
+    {% endif %}
+
+    {# ── أدوات شخصية (الكل) ── #}
+    <div class="sb-section">أدواتي</div>
+    <a href="{{ url_for('manage_signature') }}" class="sb-link {% if request.endpoint=='manage_signature' %}active{% endif %}">
+      <span class="sb-icon">✍️</span> توقيعي الرقمي
     </a>
     <a href="{{ url_for('mobile_app') }}" class="sb-link {% if request.endpoint=='mobile_app' %}active{% endif %}">
       <span class="sb-icon">📱</span> واجهة الجوال
     </a>
-    <a href="{{ url_for('manage_signature') }}" class="sb-link {% if request.endpoint=='manage_signature' %}active{% endif %}">
-      <span class="sb-icon">✍️</span> توقيعي الرقمي
-    </a>
-    <a href="{{ url_for('report_builder_page') }}" class="sb-link {% if request.endpoint=='report_builder_page' %}active{% endif %}">
-      <span class="sb-icon">📊</span> منشئ التقارير
-    </a>
-    <a href="{{ url_for('integrations_page') }}" class="sb-link {% if request.endpoint=='integrations_page' %}active{% endif %}">
-      <span class="sb-icon">🔌</span> بوابة التكامل
-    </a>
-    {% if is_manager %}
-    <a href="{{ url_for('templates_list') }}" class="sb-link {% if request.endpoint in ('templates_list','template_new','template_edit') %}active{% endif %}">
-      <span class="sb-icon">📋</span> قوالب الخطابات
-    </a>
-    <a href="{{ url_for('executive_dashboard') }}" class="sb-link {% if request.endpoint=='executive_dashboard' %}active{% endif %}">
-      <span class="sb-icon">📊</span> داشبورد تنفيذي
-    </a>
-    {% endif %}
-    {% if is_admin %}
-    <a href="{{ url_for('audit_log_view') }}" class="sb-link {% if request.endpoint=='audit_log_view' %}active{% endif %}">
-      <span class="sb-icon">🔍</span> سجل التدقيق
-    </a>
-    {% endif %}
 
-    {# ── إدارة الأعمال (الكل) ── #}
+    {# ── إدارة الأعمال — مدير مشروع وأعلى ── #}
+    {% if is_manager %}
     <div class="sb-section">إدارة الأعمال</div>
     <a href="{{ url_for('projects') }}" class="sb-link {% if request.endpoint in ('projects','new_project','edit_project') %}active{% endif %}">
       <span class="sb-icon">🏗️</span> المشاريع
     </a>
-    {% if is_manager %}
     <a href="{{ url_for('contacts') }}" class="sb-link {% if request.endpoint in ('contacts','new_contact','edit_contact') %}active{% endif %}">
       <span class="sb-icon">👥</span> جهات الاتصال
     </a>
+    <a href="{{ url_for('templates_list') }}" class="sb-link {% if request.endpoint in ('templates_list','template_new','template_edit') %}active{% endif %}">
+      <span class="sb-icon">📋</span> قوالب الخطابات
+    </a>
     {% endif %}
 
-    {# ── التحليلات (المدير وأعلى) ── #}
+    {# ── التحليلات — مدير مشروع وأعلى ── #}
     {% if is_manager %}
-    <div class="sb-section">التحليلات والذكاء الاصطناعي</div>
+    <div class="sb-section">التحليلات والتقارير</div>
     <a href="{{ url_for('reports') }}" class="sb-link {% if request.endpoint=='reports' %}active{% endif %}">
       <span class="sb-icon">📈</span> التقارير والإحصائيات
     </a>
-    <a href="{{ url_for('advanced_reports') }}" class="sb-link {% if request.endpoint=='advanced_reports' %}active{% endif %}" style="padding-right:44px;font-size:13px">
-      <span class="sb-icon" style="font-size:13px">📊</span> تقارير متقدمة
+    <a href="{{ url_for('report_builder_page') }}" class="sb-link {% if request.endpoint=='report_builder_page' %}active{% endif %}">
+      <span class="sb-icon">🛠️</span> منشئ التقارير
     </a>
-    <a href="{{ url_for('notification_settings_view') }}" class="sb-link {% if request.endpoint=='notification_settings_view' %}active{% endif %}">
-      <span class="sb-icon">🤖</span> الإشعارات والذكاء الاصطناعي
+    <a href="{{ url_for('advanced_reports') }}" class="sb-link {% if request.endpoint=='advanced_reports' %}active{% endif %}">
+      <span class="sb-icon">📊</span> تقارير متقدمة
     </a>
-    {% if is_admin %}
-    <a href="{{ url_for('export_excel') }}" class="sb-link" target="_blank">
-      <span class="sb-icon">⬇️</span> تصدير Excel
+    <a href="{{ url_for('executive_dashboard') }}" class="sb-link {% if request.endpoint=='executive_dashboard' %}active{% endif %}">
+      <span class="sb-icon">🎯</span> داشبورد تنفيذي
     </a>
-    {% endif %}
     {% endif %}
 
-    {# ── الإدارة (admin فقط) ── #}
+    {# ── الإدارة — admin فقط ── #}
     {% if is_admin %}
     <div class="sb-section">الإدارة</div>
     <a href="{{ url_for('users') }}" class="sb-link {% if request.endpoint in ('users','new_user','edit_user') %}active{% endif %}">
@@ -550,15 +547,27 @@ textarea.form-control{min-height:120px;resize:vertical}
     <a href="{{ url_for('settings') }}" class="sb-link {% if request.endpoint=='settings' %}active{% endif %}">
       <span class="sb-icon">⚙️</span> إعدادات النظام
     </a>
+    <a href="{{ url_for('notification_settings_view') }}" class="sb-link {% if request.endpoint=='notification_settings_view' %}active{% endif %}">
+      <span class="sb-icon">🔔</span> إعدادات الإشعارات
+    </a>
+    <a href="{{ url_for('integrations_page') }}" class="sb-link {% if request.endpoint=='integrations_page' %}active{% endif %}">
+      <span class="sb-icon">🔌</span> بوابة التكامل
+    </a>
+    <a href="{{ url_for('audit_log_view') }}" class="sb-link {% if request.endpoint=='audit_log_view' %}active{% endif %}">
+      <span class="sb-icon">🔍</span> سجل التدقيق
+    </a>
     <a href="{{ url_for('email_ingestion') }}" class="sb-link {% if request.endpoint=='email_ingestion' %}active{% endif %}">
       <span class="sb-icon">📧</span> استقبال البريد
+    </a>
+    <a href="{{ url_for('export_excel') }}" class="sb-link" target="_blank">
+      <span class="sb-icon">⬇️</span> تصدير Excel
     </a>
     <a href="{{ url_for('api_docs') }}" class="sb-link {% if request.endpoint=='api_docs' %}active{% endif %}">
       <span class="sb-icon">🔗</span> واجهة REST API
     </a>
     {% endif %}
 
-    {# ── إدارة الشركات (super_admin فقط) ── #}
+    {# ── إدارة الشركات — super_admin فقط ── #}
     {% if is_super %}
     <div class="sb-section">مالك النظام</div>
     <a href="{{ url_for('super_admin') }}" class="sb-link {% if request.endpoint in ('super_admin','new_company') %}active{% endif %}">
