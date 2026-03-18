@@ -1,14 +1,5 @@
 {% extends 'base.html' %}
-{% block title %}إعدادات الإشعارات والذكاء الاصطناعي
-<script>
-function toggleWAProvider(val) {
-  document.getElementById('callmebot-section').style.display  = val === 'callmebot' ? 'block' : 'none';
-  document.getElementById('ultramsg-section').style.display   = val === 'ultramsg'  ? 'block' : 'none';
-  document.getElementById('business-section').style.display   = val === 'business'  ? 'block' : 'none';
-}
-</script>
-
-{% endblock %}
+{% block title %}إعدادات الإشعارات{% endblock %}
 {% block content %}
 <div class="page-header">
   <h1 class="page-title"><i class="bi bi-bell-fill"></i> الإشعارات والذكاء الاصطناعي</h1>
@@ -176,7 +167,7 @@ function toggleWAProvider(val) {
           </div>
 
           <!-- إعدادات CallMeBot -->
-          <div id="callmebot-section" {% if s and s.whatsapp_provider == 'business' %}style="display:none"{% endif %}>
+          <div id="callmebot-section" {% if s and s.whatsapp_provider in ('business','ultramsg') %}style="display:none"{% endif %}>
             <div style="background:rgba(6,255,165,.07);border:1px solid rgba(6,255,165,.3);border-radius:10px;padding:16px;margin-bottom:16px">
               <div style="font-size:14px;font-weight:800;color:var(--mint,#06ffa5);margin-bottom:10px">🆓 إعداد CallMeBot (مرة واحدة لكل موظف)</div>
               <ol style="font-size:13px;color:var(--text2,#B0BEC5);padding-right:18px;margin:0;line-height:2">
@@ -363,5 +354,20 @@ function togglePass(id) {
   const el = document.getElementById(id);
   el.type = el.type === 'password' ? 'text' : 'password';
 }
+</script>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleWAProvider(val) {
+  document.getElementById('callmebot-section').style.display = val === 'callmebot' ? 'block' : 'none';
+  document.getElementById('ultramsg-section').style.display  = val === 'ultramsg'  ? 'block' : 'none';
+  document.getElementById('business-section').style.display  = val === 'business'  ? 'block' : 'none';
+}
+// تطبيق الحالة الحالية عند تحميل الصفحة
+document.addEventListener('DOMContentLoaded', function() {
+  const selected = document.querySelector('input[name="whatsapp_provider"]:checked');
+  if (selected) toggleWAProvider(selected.value);
+});
 </script>
 {% endblock %}
