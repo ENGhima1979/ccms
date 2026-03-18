@@ -2,8 +2,9 @@
 {% block title %}إعدادات الإشعارات والذكاء الاصطناعي
 <script>
 function toggleWAProvider(val) {
-  document.getElementById('callmebot-section').style.display = val === 'callmebot' ? 'block' : 'none';
-  document.getElementById('business-section').style.display  = val === 'business'  ? 'block' : 'none';
+  document.getElementById('callmebot-section').style.display  = val === 'callmebot' ? 'block' : 'none';
+  document.getElementById('ultramsg-section').style.display   = val === 'ultramsg'  ? 'block' : 'none';
+  document.getElementById('business-section').style.display   = val === 'business'  ? 'block' : 'none';
 }
 </script>
 
@@ -149,6 +150,18 @@ function toggleWAProvider(val) {
                 </label>
               </div>
               <div class="col-md-6">
+                <label class="card p-3 border-2 {% if s and s.whatsapp_provider == 'ultramsg' %}border-warning{% else %}border-secondary{% endif %} rounded" style="cursor:pointer">
+                  <input type="radio" name="whatsapp_provider" value="ultramsg"
+                         class="form-check-input" {% if s and s.whatsapp_provider == 'ultramsg' %}checked{% endif %}
+                         onchange="toggleWAProvider(this.value)">
+                  <div class="mt-2">
+                    <div class="fw-bold" style="color:#ffc107">📱 UltraMsg — ربط رقمك</div>
+                    <small class="text-muted">امسح QR من هاتفك — 300 رسالة/شهر مجاناً</small>
+                    <div class="badge mt-1" style="background:#ffc107;color:#000">بديل CallMeBot</div>
+                  </div>
+                </label>
+              </div>
+              <div class="col-md-6">
                 <label class="card p-3 border-2 {% if s and s.whatsapp_provider == 'business' %}border-primary{% else %}border-secondary{% endif %} rounded" style="cursor:pointer">
                   <input type="radio" name="whatsapp_provider" value="business"
                          class="form-check-input" {% if s and s.whatsapp_provider == 'business' %}checked{% endif %}
@@ -185,6 +198,40 @@ function toggleWAProvider(val) {
               </div>
             </div>
             <button type="submit" name="action" value="test_whatsapp" class="btn btn-success mt-3">
+              📱 إرسال رسالة اختبار
+            </button>
+          </div>
+
+          <!-- إعدادات UltraMsg -->
+          <div id="ultramsg-section" {% if not s or s.whatsapp_provider != 'ultramsg' %}style="display:none"{% endif %}>
+            <div style="background:rgba(255,193,7,.07);border:1px solid rgba(255,193,7,.3);border-radius:10px;padding:16px;margin-bottom:16px">
+              <div style="font-size:14px;font-weight:800;color:#ffc107;margin-bottom:10px">📱 إعداد UltraMsg (مرة واحدة)</div>
+              <ol style="font-size:13px;color:var(--text2,#B0BEC5);padding-right:18px;margin:0;line-height:2">
+                <li>اذهب لـ <a href="https://ultramsg.com" target="_blank" style="color:var(--sky,#00B4D8)">ultramsg.com</a> وسجّل حساباً مجانياً</li>
+                <li>اضغط <strong>Create Instance</strong></li>
+                <li>امسح <strong>QR Code</strong> من واتساب على هاتفك</li>
+                <li>انسخ <strong>Instance ID</strong> و <strong>Token</strong> من اللوحة</li>
+                <li>أدخلهما أدناه واضغط اختبار</li>
+              </ol>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Instance ID</label>
+                <input type="text" name="ultramsg_instance_id" class="form-control"
+                       value="{{ s.ultramsg_instance_id if s and s.ultramsg_instance_id else '' }}"
+                       placeholder="instance123456" dir="ltr">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Token</label>
+                <input type="password" name="ultramsg_token" class="form-control"
+                       placeholder="{{ '••••••••' if s and s.ultramsg_token else 'xxxxxxxxxxxxxxxx' }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">رقم الاختبار</label>
+                <input type="text" name="test_phone" class="form-control" placeholder="+966512345678" dir="ltr">
+              </div>
+            </div>
+            <button type="submit" name="action" value="test_whatsapp" class="btn btn-warning mt-3">
               📱 إرسال رسالة اختبار
             </button>
           </div>
