@@ -1,103 +1,171 @@
 {% extends 'base.html' %}
 {% block title %}بحث متقدم{% endblock %}
 {% block page_title %}🔎 بحث متقدم{% endblock %}
-{% block page_sub %}Full-Text Search في جميع المراسلات والمحتوى{% endblock %}
+{% block page_sub %}البحث في جميع المراسلات بالنص أو الفلاتر{% endblock %}
 {% block content %}
 
-<!-- صندوق البحث الرئيسي -->
+<!-- صندوق البحث -->
 <div class="card mb-4">
-  <div class="card-body" style="padding:24px">
-    <form method="GET">
-      <div style="display:flex;gap:10px;margin-bottom:12px">
+  <div class="card-body" style="padding:20px 24px">
+    <form method="GET" id="searchForm">
+      <!-- حقل البحث النصي -->
+      <div style="display:flex;gap:10px;margin-bottom:14px">
         <div style="flex:1;position:relative">
-          <input name="q" class="form-control" value="{{ q }}"
+          <input name="q" class="form-control" id="qInput" value="{{ q }}"
                  placeholder="ابحث في الموضوع، النص، الجهة، رقم المراسلة..."
-                 style="padding-right:40px;font-size:15px;height:46px"
-                 autofocus>
+                 style="padding-right:42px;font-size:15px;height:46px" autofocus>
           <span style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:18px;color:var(--text3)">🔎</span>
         </div>
-        <button type="submit" class="btn btn-electric" style="height:46px;padding:0 24px;font-size:15px">بحث</button>
+        <button type="submit" class="btn btn-electric" style="height:46px;padding:0 28px;font-size:15px">بحث</button>
+        {% if has_query %}
+        <a href="{{ url_for('advanced_search') }}" class="btn btn-ghost" style="height:46px;padding:0 16px" title="مسح البحث">✕</a>
+        {% endif %}
       </div>
-      <!-- فلاتر -->
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <select name="type" class="form-control" style="width:auto">
-          <option value="">كل الأنواع</option>
-          <option value="out"      {% if type_=='out' %}selected{% endif %}>صادر</option>
-          <option value="in"       {% if type_=='in'  %}selected{% endif %}>وارد</option>
-          <option value="internal" {% if type_=='internal' %}selected{% endif %}>داخلي</option>
+
+      <!-- الفلاتر -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select name="type" class="form-control" style="width:auto;min-width:130px" onchange="this.form.submit()">
+          <option value="">📋 كل الأنواع</option>
+          <option value="out"      {% if type_=='out'      %}selected{% endif %}>📤 صادر</option>
+          <option value="in"       {% if type_=='in'       %}selected{% endif %}>📥 وارد</option>
+          <option value="internal" {% if type_=='internal' %}selected{% endif %}>🔄 داخلي</option>
         </select>
-        <select name="category" class="form-control" style="width:auto">
-          <option value="">كل التصنيفات</option>
-          <option value="general"   {% if category=='general'   %}selected{% endif %}>عام</option>
-          <option value="financial" {% if category=='financial' %}selected{% endif %}>مالي</option>
-          <option value="legal"     {% if category=='legal'     %}selected{% endif %}>قانوني</option>
-          <option value="technical" {% if category=='technical' %}selected{% endif %}>تقني</option>
+
+        <select name="priority" class="form-control" style="width:auto;min-width:130px" onchange="this.form.submit()">
+          <option value="">🎯 كل الأولويات</option>
+          <option value="urgent" {% if priority=='urgent' %}selected{% endif %}>⚡ عاجل</option>
+          <option value="high"   {% if priority=='high'   %}selected{% endif %}>▲ مهم</option>
+          <option value="normal" {% if priority=='normal' %}selected{% endif %}>● عادي</option>
+          <option value="low"    {% if priority=='low'    %}selected{% endif %}>▽ منخفض</option>
         </select>
-        <input type="date" name="date_from" class="form-control" value="{{ date_from }}" style="width:auto" title="من تاريخ">
-        <input type="date" name="date_to"   class="form-control" value="{{ date_to }}"   style="width:auto" title="إلى تاريخ">
+
+        <select name="status" class="form-control" style="width:auto;min-width:130px" onchange="this.form.submit()">
+          <option value="">🔘 كل الحالات</option>
+          <option value="draft"    {% if status=='draft'    %}selected{% endif %}>📝 مسودة</option>
+          <option value="pending"  {% if status=='pending'  %}selected{% endif %}>⏳ للمراجعة</option>
+          <option value="approved" {% if status=='approved' %}selected{% endif %}>✅ معتمد</option>
+          <option value="sent"     {% if status=='sent'     %}selected{% endif %}>📤 مرسل</option>
+          <option value="received" {% if status=='received' %}selected{% endif %}>📥 مستلم</option>
+        </select>
+
+        <select name="category" class="form-control" style="width:auto;min-width:130px" onchange="this.form.submit()">
+          <option value="">📁 كل التصنيفات</option>
+          <option value="general"     {% if category=='general'     %}selected{% endif %}>عام</option>
+          <option value="contract"    {% if category=='contract'    %}selected{% endif %}>عقود</option>
+          <option value="tender"      {% if category=='tender'      %}selected{% endif %}>مناقصات</option>
+          <option value="financial"   {% if category=='financial'   %}selected{% endif %}>مالي</option>
+          <option value="legal"       {% if category=='legal'       %}selected{% endif %}>قانوني</option>
+          <option value="technical"   {% if category=='technical'   %}selected{% endif %}>فني</option>
+          <option value="hr"          {% if category=='hr'          %}selected{% endif %}>موارد بشرية</option>
+          <option value="procurement" {% if category=='procurement' %}selected{% endif %}>مشتريات</option>
+        </select>
+
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="date" name="date_from" class="form-control" value="{{ date_from }}"
+                 style="width:auto" title="من تاريخ" onchange="this.form.submit()">
+          <span style="color:var(--text3);font-size:12px">—</span>
+          <input type="date" name="date_to" class="form-control" value="{{ date_to }}"
+                 style="width:auto" title="إلى تاريخ" onchange="this.form.submit()">
+        </div>
       </div>
     </form>
   </div>
 </div>
 
-<!-- النتائج -->
-{% if q %}
-<div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
-  <div style="color:var(--text2);font-size:14px">
-    {% if total > 0 %}
-    وُجد <strong style="color:var(--sky)">{{ total }}</strong> نتيجة عن "<strong>{{ q }}</strong>"
+<!-- رسالة النتائج -->
+<div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+  <div style="font-size:14px;color:var(--text2)">
+    {% if has_query %}
+      {% if total > 0 %}
+        وُجد <strong style="color:var(--sky)">{{ total }}</strong> نتيجة
+        {% if q %} عن "<strong>{{ q }}</strong>"{% endif %}
+        {% if type_ %} · النوع: <strong>{{ {'out':'صادر','in':'وارد','internal':'داخلي'}.get(type_,type_) }}</strong>{% endif %}
+        {% if priority %} · الأولوية: <strong>{{ {'urgent':'عاجل','high':'مهم','normal':'عادي','low':'منخفض'}.get(priority,priority) }}</strong>{% endif %}
+        {% if status %} · الحالة: <strong>{{ status }}</strong>{% endif %}
+        {% if date_from or date_to %} · التاريخ: {{ date_from }} — {{ date_to }}{% endif %}
+      {% else %}
+        <span style="color:var(--danger)">لا توجد نتائج</span>
+        {% if q %} عن "<strong>{{ q }}</strong>"{% endif %}
+      {% endif %}
     {% else %}
-    لا توجد نتائج عن "<strong>{{ q }}</strong>"
+      آخر <strong style="color:var(--sky)">{{ total }}</strong> مراسلة — استخدم البحث أو الفلاتر للتضييق
     {% endif %}
   </div>
-  <div style="font-size:12px;color:var(--text3)">FTS5 — بحث كامل في النص</div>
+  <div style="font-size:11px;color:var(--text3)">البحث يشمل: الموضوع · النص · الجهة · الرقم المرجعي</div>
 </div>
 
+<!-- النتائج -->
 {% if results %}
 <div style="display:flex;flex-direction:column;gap:8px">
   {% for r in results %}
-  <a href="{{ url_for('view_correspondence', cid=r.id) }}" class="card" style="display:block;text-decoration:none;transition:border-color .2s" onmouseover="this.style.borderColor='var(--sky)'" onmouseout="this.style.borderColor='var(--border)'">
-    <div style="padding:16px;display:flex;gap:16px;align-items:flex-start">
-      <div style="flex:1">
+  <a href="{{ url_for('view_correspondence', cid=r.id) }}"
+     class="card" style="display:block;text-decoration:none;transition:border-color .2s"
+     onmouseover="this.style.borderColor='var(--sky)'"
+     onmouseout="this.style.borderColor='var(--border)'">
+    <div style="padding:14px 16px;display:flex;gap:14px;align-items:flex-start">
+
+      <!-- أيقونة النوع -->
+      <div style="width:38px;height:38px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;
+                  background:{% if r.type=='out' %}rgba(0,180,216,.12){% elif r.type=='in' %}rgba(6,255,165,.12){% else %}rgba(255,193,7,.12){% endif %}">
+        {{ '📤' if r.type=='out' else '📥' if r.type=='in' else '🔄' }}
+      </div>
+
+      <!-- المحتوى -->
+      <div style="flex:1;min-width:0">
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;flex-wrap:wrap">
-          <span style="font-weight:700;color:var(--sky)">{{ r.ref_num }}</span>
+          <span style="font-weight:800;color:var(--sky);font-size:13px">{{ r.ref_num }}</span>
           <span class="badge badge-{{ r.type }}">{{ 'صادر' if r.type=='out' else 'وارد' if r.type=='in' else 'داخلي' }}</span>
-          {% if r.priority == 'urgent' %}<span class="badge badge-urgent">عاجل</span>{% endif %}
-          <span style="font-size:12px;color:var(--text3)">{{ r.date }}</span>
+          {% if r.priority == 'urgent' %}<span class="badge badge-urgent">⚡ عاجل</span>
+          {% elif r.priority == 'high' %}<span class="badge" style="background:rgba(255,107,53,.15);color:#ff6b35">▲ مهم</span>{% endif %}
+          <span class="badge badge-{{ r.status }}">
+            {{ {'draft':'مسودة','pending':'للمراجعة','approved':'معتمد','sent':'مرسل','received':'مستلم'}.get(r.status, r.status) }}
+          </span>
+          <span style="font-size:11px;color:var(--text3);margin-right:auto">{{ r.date }}</span>
         </div>
-        <div style="font-weight:600;color:var(--text);margin-bottom:4px;font-size:14px">{{ r.subject }}</div>
-        <div style="font-size:12px;color:var(--text3);display:flex;gap:16px;flex-wrap:wrap">
+
+        <div style="font-weight:700;color:var(--text);margin-bottom:5px;font-size:14px">{{ r.subject }}</div>
+
+        <div style="font-size:12px;color:var(--text3);display:flex;gap:14px;flex-wrap:wrap">
           {% if r.party %}<span>🏢 {{ r.party }}</span>{% endif %}
-          {% if r.proj_name %}<span>📁 {{ r.proj_name }}</span>{% endif %}
+          {% if r.proj_name %}<span style="color:{{ r.proj_color or 'var(--sky)' }}">📁 {{ r.proj_name }}</span>{% endif %}
           {% if r.creator_name %}<span>👤 {{ r.creator_name }}</span>{% endif %}
         </div>
-        {% if r.body %}
-        <div style="margin-top:6px;font-size:12px;color:var(--text3);line-height:1.5;
-                    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">
-          {{ r.body[:200] }}...
+
+        {% if r.body and q %}
+        <div style="margin-top:6px;font-size:12px;color:var(--text3);line-height:1.6;
+                    overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+                    border-right:2px solid var(--border);padding-right:8px;margin-right:0">
+          {{ r.body[:250] }}
         </div>
         {% endif %}
       </div>
-      <div style="font-size:12px;color:var(--text3);text-align:left;white-space:nowrap">
-        <span class="badge badge-{{ r.status }}">{{ r.status|status_label }}</span>
-      </div>
+
     </div>
   </a>
   {% endfor %}
 </div>
-{% else %}
-<div class="empty">
-  <div class="empty-icon">🔎</div>
-  <div class="empty-title">لا توجد نتائج</div>
-  <div class="empty-sub">جرب كلمات مختلفة أو أوسع نطاقاً</div>
-</div>
-{% endif %}
-{% else %}
-<!-- حالة البداية -->
+
+{% elif has_query %}
 <div class="empty" style="padding:60px">
   <div class="empty-icon">🔎</div>
-  <div class="empty-title">ابحث في جميع المراسلات</div>
-  <div class="empty-sub">البحث يشمل: الموضوع، النص الكامل، اسم الجهة، رقم المراسلة، الإجراء المطلوب</div>
+  <div class="empty-title">لا توجد نتائج</div>
+  <div class="empty-sub">
+    جرب كلمات مختلفة أو أوسع نطاقاً
+    {% if type_ %} · النوع: {{ {'out':'صادر','in':'وارد','internal':'داخلي'}.get(type_,'') }}{% endif %}
+  </div>
+  {% if type_ or category or priority or status %}
+  <div style="margin-top:16px">
+    <a href="{{ url_for('advanced_search', q=q) }}" class="btn btn-ghost btn-sm">مسح الفلاتر والبحث مجدداً</a>
+  </div>
+  {% endif %}
+</div>
+
+{% else %}
+<div class="empty" style="padding:60px">
+  <div class="empty-icon">🔎</div>
+  <div class="empty-title">ابحث في المراسلات</div>
+  <div class="empty-sub">البحث يشمل: الموضوع · النص الكامل · اسم الجهة · رقم المراسلة · الإجراء المطلوب</div>
 </div>
 {% endif %}
+
 {% endblock %}

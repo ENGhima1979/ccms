@@ -1975,65 +1975,106 @@ def api_template_preview(tid):
 @app.route('/search')
 @login_required
 def advanced_search():
-    """صفحة البحث المتقدم مع FTS"""
+    """صفحة البحث المتقدم مع FTS - يعمل بالنص أو بالفلاتر فقط"""
     q        = request.args.get('q','').strip()
     category = request.args.get('category','')
     type_    = request.args.get('type','')
     date_from= request.args.get('date_from','')
     date_to  = request.args.get('date_to','')
+    priority = request.args.get('priority','')
+    status   = request.args.get('status','')
     results  = []
     total    = 0
 
-    if q:
-        conn = get_db()
-        cid  = session['company_id']
-        pid_list = get_user_project_ids()
+    # البحث يعمل إذا كان هناك نص أو أي فلتر
+    has_query = bool(q or category or type_ or date_from or date_to or priority or status)
 
-        try:
-            # FTS5 search
-            fts_ids = [r['correspondence_id'] for r in conn.execute(
-                "SELECT correspondence_id FROM corr_fts WHERE corr_fts MATCH ? LIMIT 200",
-                (q + '*',)).fetchall()]
-        except Exception:
+    conn = get_db()
+    cid  = session['company_id']
+    pid_list = get_user_project_ids()
+
+    if has_query:
+        # --- بناء الاستعلام الأساسي ---
+        sql = """SELECT c.*,p.name as proj_name,p.color as proj_color,
+                        u.full_name as creator_name
+                 FROM correspondence c
+                 LEFT JOIN projects p ON c.project_id=p.id
+                 LEFT JOIN users u    ON c.created_by=u.id
+                 WHERE c.company_id=? AND c.is_deleted=0 AND c.archived=0"""
+        params = [cid]
+
+        if q:
+            # محاولة FTS أولاً
             fts_ids = []
+            try:
+                # نظف الكلمة من رموز FTS الخاصة
+                q_clean = q.replace('"','').replace("'",'').replace('*','').strip()
+                if q_clean:
+                    fts_rows = conn.execute(
+                        "SELECT correspondence_id FROM corr_fts WHERE corr_fts MATCH ? LIMIT 300",
+                        (q_clean,)).fetchall()
+                    fts_ids = [r['correspondence_id'] for r in fts_rows]
+            except Exception:
+                fts_ids = []
 
-        if fts_ids:
-            placeholders = ','.join('?' * len(fts_ids))
-            sql = f"""SELECT c.*,p.name as proj_name,u.full_name as creator_name
-                      FROM correspondence c
-                      LEFT JOIN projects p ON c.project_id=p.id
-                      LEFT JOIN users u ON c.created_by=u.id
-                      WHERE c.id IN ({placeholders})
-                        AND c.company_id=? AND c.is_deleted=0"""
-            params = fts_ids + [cid]
-        else:
-            sql = """SELECT c.*,p.name as proj_name,u.full_name as creator_name
-                     FROM correspondence c
-                     LEFT JOIN projects p ON c.project_id=p.id
-                     LEFT JOIN users u ON c.created_by=u.id
-                     WHERE c.company_id=? AND c.is_deleted=0
-                     AND (c.subject LIKE ? OR c.body LIKE ? OR c.ref_num LIKE ? OR c.party LIKE ?)"""
-            params = [cid] + [f'%{q}%']*4
+            if fts_ids:
+                ph = ','.join('?'*len(fts_ids))
+                sql += f" AND c.id IN ({ph})"
+                params += fts_ids
+            else:
+                # LIKE fallback — يعمل دائماً
+                sql += """ AND (c.subject LIKE ? OR c.body LIKE ?
+                               OR c.ref_num LIKE ? OR c.party LIKE ?
+                               OR c.action_required LIKE ?)"""
+                params += [f'%{q}%']*5
 
-        if category: sql += " AND c.category=?"; params.append(category)
-        if type_:    sql += " AND c.type=?";     params.append(type_)
-        if date_from:sql += " AND c.date>=?";    params.append(date_from)
-        if date_to:  sql += " AND c.date<=?";    params.append(date_to)
-        sql += " ORDER BY c.date DESC LIMIT 50"
+        # تطبيق الفلاتر
+        if type_:     sql += " AND c.type=?";     params.append(type_)
+        if category:  sql += " AND c.category=?"; params.append(category)
+        if priority:  sql += " AND c.priority=?"; params.append(priority)
+        if status:    sql += " AND c.status=?";   params.append(status)
+        if date_from: sql += " AND c.date>=?";    params.append(date_from)
+        if date_to:   sql += " AND c.date<=?";    params.append(date_to)
 
+        # فلتر المشاريع للمستخدمين المقيّدين
+        if pid_list is not None:
+            if len(pid_list) == 0:
+                sql += " AND 1=0"  # لا يرى شيئاً
+            else:
+                ph = ','.join('?'*len(pid_list))
+                sql += f" AND (c.project_id IS NULL OR c.project_id IN ({ph}))"
+                params += pid_list
+
+        sql += " ORDER BY c.date DESC LIMIT 100"
         results = conn.execute(sql, params).fetchall()
         total   = len(results)
 
-        # Apply project filter for non-admins
-        if pid_list is not None:
-            results = [r for r in results
-                       if not r['project_id'] or r['project_id'] in pid_list]
-        conn.close()
+    else:
+        # الصفحة الأولى: عرض آخر 20 مراسلة
+        sql = """SELECT c.*,p.name as proj_name,p.color as proj_color,
+                        u.full_name as creator_name
+                 FROM correspondence c
+                 LEFT JOIN projects p ON c.project_id=p.id
+                 LEFT JOIN users u    ON c.created_by=u.id
+                 WHERE c.company_id=? AND c.is_deleted=0 AND c.archived=0"""
+        params = [cid]
+        if pid_list is not None and len(pid_list) == 0:
+            sql += " AND 1=0"
+        elif pid_list is not None:
+            ph = ','.join('?'*len(pid_list))
+            sql += f" AND (c.project_id IS NULL OR c.project_id IN ({ph}))"
+            params += pid_list
+        sql += " ORDER BY c.date DESC LIMIT 20"
+        results = conn.execute(sql, params).fetchall()
+        total   = len(results)
 
+    conn.close()
     return render_template('advanced_search.html',
-                           results=results, total=total, q=q,
-                           category=category, type_=type_,
-                           date_from=date_from, date_to=date_to)
+                           results=results, total=total,
+                           q=q, category=category, type_=type_,
+                           date_from=date_from, date_to=date_to,
+                           priority=priority, status=status,
+                           has_query=has_query)
 
 
 # ======================================================
