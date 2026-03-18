@@ -128,18 +128,14 @@ def send_whatsapp_ultramsg(phone: str, message: str,
     elif not phone.startswith('966') and len(phone) == 9:
         phone = '966' + phone
 
-    # UltraMsg API — JSON body مع token (الصيغة الصحيحة)
-    import json as _json
-    body_data = _json.dumps({
-        'token': token,
-        'to':    phone,
-        'body':  message,
-    }, ensure_ascii=False).encode('utf-8')
+    # UltraMsg API — GET request مع parameters في URL (الطريقة الوحيدة التي تعمل)
+    encoded_body = urllib.parse.quote(message, safe='')
+    url = (f"https://api.ultramsg.com/{instance_id}/messages/chat"
+           f"?token={urllib.parse.quote(token, safe='')}"
+           f"&to={urllib.parse.quote(phone, safe='')}"
+           f"&body={encoded_body}")
 
-    url = f"https://api.ultramsg.com/{instance_id}/messages/chat"
-    req = urllib.request.Request(url, data=body_data,
-        headers={'Content-Type': 'application/json; charset=utf-8'},
-        method='POST')
+    req = urllib.request.Request(url, method='GET')
 
 
     try:
