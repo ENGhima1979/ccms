@@ -514,6 +514,9 @@ textarea.form-control{min-height:120px;resize:vertical}
     <a href="{{ url_for('advanced_search') }}" class="sb-link {% if request.endpoint=='advanced_search' %}active{% endif %}">
       <span class="sb-icon">🔎</span> بحث متقدم
     </a>
+    <a href="{{ url_for('doc_search') }}" class="sb-link {% if request.endpoint=='doc_search' %}active{% endif %}">
+      <span class="sb-icon">📄</span> بحث في الوثائق
+    </a>
 
     {# الأرشيف — مدير مشروع وأعلى #}
     {% if is_manager %}

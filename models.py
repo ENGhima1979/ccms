@@ -578,6 +578,17 @@ CREATE TRIGGER IF NOT EXISTS corr_fts_delete AFTER DELETE ON correspondence BEGI
 END;
 
 -- -----------------------------------------
+--  FTS للبحث داخل نصوص المستندات
+-- -----------------------------------------
+CREATE VIRTUAL TABLE IF NOT EXISTS doc_fts USING fts5(
+    correspondence_id,
+    attachment_id,
+    company_id UNINDEXED,
+    content,
+    tokenize="unicode61"
+);
+
+-- -----------------------------------------
 --  التوقيعات الرقمية للمستخدمين
 -- -----------------------------------------
 CREATE TABLE IF NOT EXISTS user_signatures (
@@ -656,6 +667,9 @@ def _migrate_db(conn):
             engine TEXT DEFAULT 'claude', status TEXT DEFAULT 'pending',
             created_at TEXT NOT NULL)""",
         "CREATE INDEX IF NOT EXISTS idx_ocr_corr ON ocr_results(correspondence_id)",
+        "ALTER TABLE ocr_results ADD COLUMN word_count INTEGER DEFAULT 0",
+        "ALTER TABLE ocr_results ADD COLUMN page_count INTEGER DEFAULT 1",
+        "CREATE INDEX IF NOT EXISTS idx_doc_fts_corr ON doc_fts(correspondence_id)",
         """CREATE TABLE IF NOT EXISTS integration_configs (
             id TEXT PRIMARY KEY, company_id TEXT NOT NULL,
             service_name TEXT NOT NULL, config_json TEXT NOT NULL,

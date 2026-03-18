@@ -2280,43 +2280,68 @@ def scheduler_run_now(job_id):
 @app.route('/correspondence/<cid>/ocr', methods=['POST'])
 @login_required
 def run_ocr(cid):
-    conn     = get_db()
-    company  = session['company_id']
-    api_key  = conn.execute(
-        "SELECT ai_api_key FROM companies WHERE id=?", (company,)
-    ).fetchone()
-    api_key  = (api_key['ai_api_key'] if api_key else None) or                app.config.get('ANTHROPIC_API_KEY', os.environ.get('ANTHROPIC_API_KEY',''))
+    """تشغيل OCR على مرفقات المراسلة"""
+    conn    = get_db()
+    company = session['company_id']
 
-    atts = conn.execute(
-        "SELECT * FROM attachments WHERE correspondence_id=?", (cid,)
-    ).fetchall()
+    # جلب API Key من إعدادات الشركة أو متغيرات البيئة
+    co_row  = conn.execute("SELECT settings_json FROM companies WHERE id=?", (company,)).fetchone()
+    api_key = ""
+    if co_row and co_row['settings_json']:
+        try:
+            settings = json.loads(co_row['settings_json'])
+            api_key = settings.get('ai_api_key','') or settings.get('anthropic_api_key','')
+        except Exception:
+            pass
+    if not api_key:
+        api_key = os.environ.get('ANTHROPIC_API_KEY','')
+
+    # تحديد المرفقات المطلوبة
+    att_id = request.form.get('attachment_id','')
+    if att_id:
+        atts = conn.execute("SELECT * FROM attachments WHERE id=? AND correspondence_id=?",
+                            (att_id, cid)).fetchall()
+    else:
+        atts = conn.execute("SELECT * FROM attachments WHERE correspondence_id=?",
+                            (cid,)).fetchall()
 
     if not atts:
         conn.close()
         return jsonify({'error': 'لا توجد مرفقات'}), 400
 
+    # السياق لمساعدة Claude
+    corr_info = conn.execute("SELECT subject,type,category FROM correspondence WHERE id=?",
+                              (cid,)).fetchone()
+    hint = ""
+    if corr_info:
+        hint = f"موضوع المراسلة: {corr_info['subject']}"
+
     results = []
     for att in atts:
-        fpath = os.path.join(
-            app.root_path, 'instance', 'uploads', att['filename']
-        )
+        fpath = os.path.join(app.root_path, 'instance', 'uploads', att['filename'])
         if not os.path.exists(fpath):
+            results.append({'filename': att['original_name'], 'error': 'الملف غير موجود'})
             continue
-        result = extract_text_from_file(fpath, api_key)
+
+        result = extract_text_from_file(fpath, api_key, hint)
         save_ocr_result(conn, cid, att['id'], company, result)
+
         results.append({
-            'filename': att['original_name'],
-            'text':     result.get('text','')[:500],
-            'engine':   result.get('engine'),
-            'confidence': result.get('confidence', 0),
-            'pages':    result.get('pages', 1)
+            'attachment_id': att['id'],
+            'filename':      att['original_name'],
+            'text':          result.get('text',''),
+            'text_preview':  result.get('text','')[:500],
+            'engine':        result.get('engine','none'),
+            'confidence':    result.get('confidence', 0),
+            'pages':         result.get('pages', 1),
+            'word_count':    result.get('word_count', 0),
+            'success':       bool(result.get('text','')),
         })
 
     log_audit(conn, 'CORR_EDIT', 'correspondence', cid, new_value='ocr_run')
     conn.commit()
     conn.close()
-    return jsonify({'success': True, 'results': results,
-                    'total': len(results)})
+    return jsonify({'success': True, 'results': results, 'total': len(results)})
 
 
 @app.route('/correspondence/<cid>/ocr/results')
@@ -2326,6 +2351,195 @@ def get_ocr_results(cid):
     results = get_ocr_result(conn, cid)
     conn.close()
     return jsonify([dict(r) for r in results])
+
+
+@app.route('/correspondence/<cid>/ocr/analyze', methods=['POST'])
+@login_required
+def analyze_ocr(cid):
+    """تحليل ذكي للنص المستخرج بـ Claude"""
+    conn    = get_db()
+    company = session['company_id']
+    task    = request.form.get('task', 'summary')
+
+    # جلب آخر نتيجة OCR
+    ocr_rows = get_ocr_result(conn, cid)
+    if not ocr_rows:
+        conn.close()
+        return jsonify({'error': 'لا توجد نصوص مستخرجة — شغّل OCR أولاً'}), 400
+
+    # دمج كل النصوص
+    full_text = '\n\n'.join(
+        r['extracted_text'] for r in ocr_rows
+        if r.get('extracted_text','').strip()
+    )
+    if not full_text:
+        conn.close()
+        return jsonify({'error': 'النصوص المستخرجة فارغة'}), 400
+
+    # API Key
+    co_row = conn.execute("SELECT settings_json FROM companies WHERE id=?", (company,)).fetchone()
+    api_key = ""
+    if co_row and co_row['settings_json']:
+        try:
+            api_key = json.loads(co_row['settings_json']).get('ai_api_key','')
+        except Exception: pass
+    if not api_key:
+        api_key = os.environ.get('ANTHROPIC_API_KEY','')
+
+    conn.close()
+
+    try:
+        from ocr_engine import analyze_document_with_ai
+        result = analyze_document_with_ai(full_text, api_key, task)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════════
+#  البحث الذكي داخل الوثائق
+# ══════════════════════════════════════════════════════════
+@app.route('/doc-search')
+@login_required
+def doc_search():
+    """البحث الذكي داخل نصوص المستندات المستخرجة بـ OCR"""
+    q        = request.args.get('q','').strip()
+    type_    = request.args.get('type','')
+    date_from= request.args.get('date_from','')
+    date_to  = request.args.get('date_to','')
+    results  = []
+    total    = 0
+    has_query= bool(q or type_ or date_from or date_to)
+
+    conn = get_db()
+    cid  = session['company_id']
+    pid_list = get_user_project_ids()
+
+    if has_query:
+        if q:
+            # FTS5 على نصوص OCR
+            doc_corr_ids = []
+            try:
+                q_clean = q.replace('"','').replace("'",'').strip()
+                rows = conn.execute(
+                    "SELECT DISTINCT correspondence_id FROM doc_fts WHERE doc_fts MATCH ? AND company_id=? LIMIT 200",
+                    (q_clean, cid)).fetchall()
+                doc_corr_ids = [r['correspondence_id'] for r in rows]
+            except Exception as e:
+                log.debug(f"doc_fts search: {e}")
+
+            # FTS5 على بيانات المراسلة أيضاً
+            meta_corr_ids = []
+            try:
+                rows2 = conn.execute(
+                    "SELECT correspondence_id FROM corr_fts WHERE corr_fts MATCH ? LIMIT 200",
+                    (q_clean,)).fetchall()
+                meta_corr_ids = [r['correspondence_id'] for r in rows2]
+            except Exception:
+                pass
+
+            # دمج النتائج (المستندات أولاً)
+            all_ids = list(dict.fromkeys(doc_corr_ids + meta_corr_ids))
+
+            if all_ids:
+                ph = ','.join('?'*len(all_ids))
+                sql = f"""SELECT c.*,p.name as proj_name,p.color as proj_color,
+                                 u.full_name as creator_name,
+                                 o.extracted_text as ocr_text,
+                                 a.original_name as att_name
+                          FROM correspondence c
+                          LEFT JOIN projects p ON c.project_id=p.id
+                          LEFT JOIN users u    ON c.created_by=u.id
+                          LEFT JOIN ocr_results o ON o.correspondence_id=c.id
+                          LEFT JOIN attachments a ON a.id=o.attachment_id
+                          WHERE c.id IN ({ph}) AND c.company_id=? AND c.is_deleted=0"""
+                params = all_ids + [cid]
+            else:
+                # LIKE fallback
+                sql = """SELECT c.*,p.name as proj_name,p.color as proj_color,
+                                u.full_name as creator_name,
+                                o.extracted_text as ocr_text,
+                                a.original_name as att_name
+                         FROM correspondence c
+                         LEFT JOIN projects p ON c.project_id=p.id
+                         LEFT JOIN users u    ON c.created_by=u.id
+                         LEFT JOIN ocr_results o ON o.correspondence_id=c.id
+                         LEFT JOIN attachments a ON a.id=o.attachment_id
+                         WHERE c.company_id=? AND c.is_deleted=0
+                         AND (c.subject LIKE ? OR c.body LIKE ? OR c.party LIKE ?
+                              OR o.extracted_text LIKE ?)"""
+                params = [cid] + [f'%{q}%']*4
+        else:
+            sql = """SELECT c.*,p.name as proj_name,p.color as proj_color,
+                            u.full_name as creator_name,
+                            o.extracted_text as ocr_text,
+                            a.original_name as att_name
+                     FROM correspondence c
+                     LEFT JOIN projects p ON c.project_id=p.id
+                     LEFT JOIN users u    ON c.created_by=u.id
+                     LEFT JOIN ocr_results o ON o.correspondence_id=c.id
+                     LEFT JOIN attachments a ON a.id=o.attachment_id
+                     WHERE c.company_id=? AND c.is_deleted=0"""
+            params = [cid]
+
+        if type_:
+            sql += " AND c.type=?"; params.append(type_)
+        if date_from:
+            sql += " AND c.date>=?"; params.append(date_from)
+        if date_to:
+            sql += " AND c.date<=?"; params.append(date_to)
+
+        if pid_list is not None:
+            if len(pid_list)==0:
+                sql += " AND 1=0"
+            else:
+                ph = ','.join('?'*len(pid_list))
+                sql += f" AND (c.project_id IS NULL OR c.project_id IN ({ph}))"
+                params += pid_list
+
+        sql += " GROUP BY c.id ORDER BY c.date DESC LIMIT 50"
+
+        raw_results = conn.execute(sql, params).fetchall()
+
+        # بناء مقتطفات النص مع تمييز الكلمة المبحوث عنها
+        results = []
+        seen_ids = set()
+        for r in raw_results:
+            if r['id'] in seen_ids:
+                continue
+            seen_ids.add(r['id'])
+            row_dict = dict(r)
+            # استخراج مقتطف من نص OCR
+            if q and row_dict.get('ocr_text'):
+                row_dict['snippet'] = _extract_snippet(row_dict['ocr_text'], q)
+                row_dict['found_in_doc'] = True
+            else:
+                row_dict['snippet'] = ''
+                row_dict['found_in_doc'] = False
+            results.append(row_dict)
+
+        total = len(results)
+
+    conn.close()
+    return render_template('doc_search.html',
+                           results=results, total=total, q=q,
+                           type_=type_, date_from=date_from,
+                           date_to=date_to, has_query=has_query)
+
+
+def _extract_snippet(text, query, window=150):
+    """استخرج مقتطفاً من النص حول الكلمة المبحوث عنها"""
+    if not text or not query:
+        return text[:200] if text else ''
+    idx = text.lower().find(query.lower())
+    if idx == -1:
+        return text[:200]
+    start = max(0, idx - window//2)
+    end   = min(len(text), idx + len(query) + window//2)
+    snippet = text[start:end]
+    if start > 0:  snippet = '...' + snippet
+    if end < len(text): snippet += '...'
+    return snippet
 
 
 # ======================================================

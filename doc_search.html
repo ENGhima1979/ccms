@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% block title %}بحث ذكي في الوثائق{% endblock %}
+{% block page_title %}🔍 بحث ذكي في الوثائق{% endblock %}
+{% block page_sub %}يبحث داخل نصوص المرفقات المستخرجة بـ OCR + بيانات المراسلات{% endblock %}
+
+{% block content %}
+
+<!-- صندوق البحث -->
+<div class="card mb-4">
+  <div class="card-body" style="padding:20px 24px">
+    <form method="GET" id="searchForm">
+      <div style="display:flex;gap:10px;margin-bottom:14px">
+        <div style="flex:1;position:relative">
+          <input name="q" class="form-control" id="qInput" value="{{ q }}"
+                 placeholder="ابحث في نصوص المستندات والمراسلات... (يدعم العربية)"
+                 style="padding-right:44px;font-size:15px;height:46px" autofocus>
+          <span style="position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:20px">🔍</span>
+        </div>
+        <button type="submit" class="btn btn-electric" style="height:46px;padding:0 28px;font-size:15px">بحث</button>
+        {% if has_query %}
+        <a href="{{ url_for('doc_search') }}" class="btn btn-ghost" style="height:46px;padding:0 16px">✕</a>
+        {% endif %}
+      </div>
+
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select name="type" class="form-control" style="width:auto" onchange="this.form.submit()">
+          <option value="">📋 كل الأنواع</option>
+          <option value="out"      {% if type_=='out'      %}selected{% endif %}>📤 صادر</option>
+          <option value="in"       {% if type_=='in'       %}selected{% endif %}>📥 وارد</option>
+          <option value="internal" {% if type_=='internal' %}selected{% endif %}>🔄 داخلي</option>
+        </select>
+        <input type="date" name="date_from" class="form-control" value="{{ date_from }}"
+               style="width:auto" title="من تاريخ" onchange="this.form.submit()">
+        <span style="color:var(--text3)">—</span>
+        <input type="date" name="date_to" class="form-control" value="{{ date_to }}"
+               style="width:auto" title="إلى تاريخ" onchange="this.form.submit()">
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- شرح آلية البحث -->
+{% if not has_query %}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:28px">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px">
+    <div style="font-size:28px;margin-bottom:10px">🤖</div>
+    <div style="font-weight:800;margin-bottom:6px;color:var(--sky)">OCR عربي احترافي</div>
+    <div style="font-size:13px;color:var(--text2)">Claude Vision + معالجة الصور بـ OpenCV — دقة +95%</div>
+  </div>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px">
+    <div style="font-size:28px;margin-bottom:10px">📄</div>
+    <div style="font-weight:800;margin-bottom:6px;color:var(--mint)">بحث داخل المستندات</div>
+    <div style="font-size:13px;color:var(--text2)">يبحث في نصوص PDF والصور المستخرجة + بيانات المراسلة</div>
+  </div>
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px">
+    <div style="font-size:28px;margin-bottom:10px">💡</div>
+    <div style="font-weight:800;margin-bottom:6px;color:var(--gold)">بحث متعدد المصادر</div>
+    <div style="font-size:13px;color:var(--text2)">الموضوع · الجهة · النص · محتوى المرفقات</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- النتائج -->
+{% if has_query %}
+<div style="margin-bottom:12px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+  <div style="font-size:14px;color:var(--text2)">
+    {% if total > 0 %}
+      وُجد <strong style="color:var(--sky)">{{ total }}</strong> نتيجة
+      {% if q %} عن "<strong>{{ q }}</strong>"{% endif %}
+    {% else %}
+      <span style="color:var(--danger)">لا توجد نتائج</span>
+      {% if q %} عن "<strong>{{ q }}</strong>"{% endif %}
+    {% endif %}
+  </div>
+  <div style="font-size:11px;color:var(--text3);display:flex;gap:14px">
+    <span>🤖 Claude Vision</span>
+    <span>📄 OCR + FTS5</span>
+  </div>
+</div>
+{% endif %}
+
+{% if results %}
+<div style="display:flex;flex-direction:column;gap:10px">
+  {% for r in results %}
+  <a href="{{ url_for('view_correspondence', cid=r.id) }}"
+     class="card" style="display:block;text-decoration:none;transition:border-color .2s"
+     onmouseover="this.style.borderColor='{% if r.found_in_doc %}var(--mint){% else %}var(--sky){% endif %}'"
+     onmouseout="this.style.borderColor='var(--border)'">
+    <div style="padding:16px;display:flex;gap:14px;align-items:flex-start">
+
+      <!-- أيقونة -->
+      <div style="width:40px;height:40px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;
+                  background:{% if r.found_in_doc %}rgba(6,255,165,.12){% elif r.type=='out' %}rgba(0,180,216,.12){% elif r.type=='in' %}rgba(255,107,53,.12){% else %}rgba(255,193,7,.12){% endif %}">
+        {% if r.found_in_doc %}📄{% elif r.type=='out' %}📤{% elif r.type=='in' %}📥{% else %}🔄{% endif %}
+      </div>
+
+      <div style="flex:1;min-width:0">
+        <!-- الرأس -->
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:5px">
+          <span style="font-weight:800;color:var(--sky);font-size:13px">{{ r.ref_num }}</span>
+          <span class="badge badge-{{ r.type }}">{{ 'صادر' if r.type=='out' else 'وارد' if r.type=='in' else 'داخلي' }}</span>
+          {% if r.found_in_doc %}
+          <span class="badge" style="background:rgba(6,255,165,.15);color:var(--mint);font-size:10px">
+            📄 موجود في المستند
+          </span>
+          {% endif %}
+          {% if r.att_name %}
+          <span style="font-size:11px;color:var(--text3)">📎 {{ r.att_name }}</span>
+          {% endif %}
+          <span style="font-size:11px;color:var(--text3);margin-right:auto">{{ r.date }}</span>
+        </div>
+
+        <!-- الموضوع -->
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">{{ r.subject }}</div>
+
+        <!-- بيانات -->
+        <div style="font-size:12px;color:var(--text3);display:flex;gap:14px;flex-wrap:wrap;margin-bottom:{% if r.snippet %}8px{% else %}0{% endif %}">
+          {% if r.party %}<span>🏢 {{ r.party }}</span>{% endif %}
+          {% if r.proj_name %}<span style="color:{{ r.proj_color or 'var(--sky)' }}">📁 {{ r.proj_name }}</span>{% endif %}
+          {% if r.creator_name %}<span>👤 {{ r.creator_name }}</span>{% endif %}
+        </div>
+
+        <!-- مقتطف من نص المستند -->
+        {% if r.snippet %}
+        <div style="background:rgba(6,255,165,.05);border-right:3px solid var(--mint);
+                    padding:8px 12px;border-radius:0 6px 6px 0;
+                    font-size:12px;color:var(--text2);line-height:1.7">
+          <span style="font-size:10px;color:var(--mint);font-weight:700;display:block;margin-bottom:4px">
+            📄 من نص المستند:
+          </span>
+          {{ r.snippet }}
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{% elif has_query %}
+<div class="empty" style="padding:60px">
+  <div class="empty-icon">🔍</div>
+  <div class="empty-title">لا توجد نتائج</div>
+  <div class="empty-sub">جرب كلمات مختلفة — تأكد من تشغيل OCR على المرفقات أولاً</div>
+  <div style="margin-top:16px">
+    <a href="{{ url_for('advanced_search', q=q) }}" class="btn btn-ghost btn-sm">
+      🔎 بحث في بيانات المراسلات فقط
+    </a>
+  </div>
+</div>
+
+{% elif not has_query %}
+<div class="card">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+    <h6 class="mb-0">📊 إحصائيات نصوص OCR</h6>
+  </div>
+  <div class="card-body">
+    {% set stats = namespace(total=0, docs=0) %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px">
+      <div style="text-align:center;padding:16px;background:rgba(0,180,216,.07);border-radius:var(--rs)">
+        <div style="font-size:26px;font-weight:900;color:var(--sky)">—</div>
+        <div style="font-size:12px;color:var(--text3)">مراسلات بمستندات محللة</div>
+      </div>
+      <div style="text-align:center;padding:16px;background:rgba(6,255,165,.07);border-radius:var(--rs)">
+        <div style="font-size:26px;font-weight:900;color:var(--mint)">—</div>
+        <div style="font-size:12px;color:var(--text3)">كلمات مفهرسة</div>
+      </div>
+    </div>
+    <div style="margin-top:16px;font-size:13px;color:var(--text3)">
+      💡 لتفعيل البحث داخل الوثائق: افتح أي مراسلة بها مرفقات واضغط <strong style="color:var(--sky)">قراءة تلقائية</strong>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
