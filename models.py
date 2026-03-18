@@ -449,6 +449,13 @@ CREATE TABLE IF NOT EXISTS notification_settings (
     whatsapp_provider    TEXT DEFAULT 'callmebot',  -- callmebot | business_api
     -- CallMeBot (مجاني — رقمك الشخصي)
     whatsapp_callmebot_key  TEXT,   -- مفتاح API من CallMeBot
+    -- UltraMsg (مجاني — ربط رقمك عبر QR)
+    ultramsg_instance_id    TEXT,
+    ultramsg_token          TEXT,
+    -- Twilio WhatsApp Sandbox
+    twilio_account_sid      TEXT,
+    twilio_auth_token       TEXT,
+    twilio_from_number      TEXT DEFAULT 'whatsapp:+14155238886',
     -- WhatsApp Business API (رسمي)
     whatsapp_api_url     TEXT,
     whatsapp_api_token   TEXT,
@@ -652,6 +659,11 @@ def _migrate_db(conn):
         "ALTER TABLE correspondence ADD COLUMN workflow_status TEXT DEFAULT 'none'",
         "ALTER TABLE notification_settings ADD COLUMN whatsapp_provider TEXT DEFAULT 'callmebot'",
         "ALTER TABLE notification_settings ADD COLUMN whatsapp_callmebot_key TEXT",
+        "ALTER TABLE notification_settings ADD COLUMN ultramsg_instance_id TEXT",
+        "ALTER TABLE notification_settings ADD COLUMN ultramsg_token TEXT",
+        "ALTER TABLE notification_settings ADD COLUMN twilio_account_sid TEXT",
+        "ALTER TABLE notification_settings ADD COLUMN twilio_auth_token TEXT",
+        "ALTER TABLE notification_settings ADD COLUMN twilio_from_number TEXT",
         "ALTER TABLE users ADD COLUMN callmebot_key TEXT",
     ]
     for sql in col_migrations:

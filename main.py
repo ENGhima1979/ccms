@@ -1536,11 +1536,18 @@ def notification_settings_view():
             # كل قسم له حقل رقم هاتف مستقل لتجنب التعارض
             if provider == 'ultramsg':
                 test_phone = request.form.get('test_phone_ultramsg','').strip()
+            elif provider == 'twilio':
+                test_phone = request.form.get('test_phone_twilio','').strip()
             elif provider == 'business':
                 test_phone = request.form.get('test_phone_business','').strip()
             else:
                 test_phone = request.form.get('test_phone_callmebot','').strip()
             callmebot_key = request.form.get('test_callmebot_key','').strip()
+
+            # Debug: log all form values
+            app.logger.warning(f"WA TEST: provider={provider} phone={test_phone} "
+                f"instance={request.form.get('ultramsg_instance_id','')} "
+                f"token_len={len(request.form.get('ultramsg_token',''))}")
 
             if not test_phone:
                 flash('يرجى إدخال رقم هاتف للاختبار','error')
@@ -1558,6 +1565,9 @@ def notification_settings_view():
                     'whatsapp_callmebot_key': callmebot_key,
                     'ultramsg_instance_id':   request.form.get('ultramsg_instance_id',''),
                     'ultramsg_token':         request.form.get('ultramsg_token',''),
+                    'twilio_account_sid':     request.form.get('twilio_account_sid',''),
+                    'twilio_auth_token':      request.form.get('twilio_auth_token',''),
+                    'twilio_from_number':     request.form.get('twilio_from_number','whatsapp:+14155238886'),
                     'whatsapp_api_url':       request.form.get('whatsapp_api_url',''),
                     'whatsapp_api_token':     request.form.get('whatsapp_api_token',''),
                     'whatsapp_phone_id':      request.form.get('whatsapp_phone_id',''),
@@ -1569,6 +1579,42 @@ def notification_settings_view():
                 else:
                     flash(f'❌ فشل الإرسال: {err}', 'error')
 
+
+        elif action == 'debug_ultramsg':
+            # route مؤقت لتشخيص UltraMsg — يظهر الرد الكامل
+            instance_id = request.form.get('ultramsg_instance_id','').strip()
+            token       = request.form.get('ultramsg_token','').strip()
+            phone       = request.form.get('test_phone_ultramsg','').strip()
+
+            if not all([instance_id, token, phone]):
+                flash('أدخل instance_id و token والرقم', 'error')
+            else:
+                import urllib.request, json as _json, urllib.error
+                phone_clean = phone.replace('+','').replace(' ','')
+                if phone_clean.startswith('0') and len(phone_clean)==10:
+                    phone_clean = '966' + phone_clean[1:]
+                elif not phone_clean.startswith('966') and len(phone_clean)==9:
+                    phone_clean = '966' + phone_clean
+
+                # جرّب الصيغة الرسمية من توثيق UltraMsg
+                body = _json.dumps({
+                    'token': token,
+                    'to':    phone_clean,
+                    'body':  'CCMS Test',
+                }, ensure_ascii=False).encode('utf-8')
+
+                url = f'https://api.ultramsg.com/{instance_id}/messages/chat'
+                req = urllib.request.Request(url, data=body,
+                    headers={'Content-Type':'application/json'},method='POST')
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as r:
+                        resp = r.read().decode('utf-8','ignore')
+                        flash(f'✅ رد UltraMsg: {resp[:300]}', 'success')
+                except urllib.error.HTTPError as e:
+                    err = e.read().decode('utf-8','ignore')
+                    flash(f'HTTP {e.code} — رد: {err[:300]}', 'error')
+                except Exception as e:
+                    flash(f'خطأ: {e}', 'error')
 
         else:  # save
             vals = (

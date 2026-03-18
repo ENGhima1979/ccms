@@ -109,7 +109,7 @@ def send_whatsapp_business(phone: str, message: str, settings: dict) -> tuple:
 # ══════════════════════════════════════════════════════
 def send_whatsapp_ultramsg(phone: str, message: str,
                             instance_id: str, token: str) -> tuple:
-    """إرسال واتساب عبر UltraMsg — GET request"""
+    """إرسال واتساب عبر UltraMsg"""
     import json as _j
     instance_id = (instance_id or '').strip()
     token       = (token or '').strip()
@@ -124,32 +124,128 @@ def send_whatsapp_ultramsg(phone: str, message: str,
     elif not phone.startswith('966') and len(phone) == 9:
         phone = '966' + phone
 
-    # GET request — نفس صيغة المتصفح التي نجحت
-    url = (f"https://api.ultramsg.com/{instance_id}/messages/chat"
-           f"?token={urllib.parse.quote(token, safe='')}"
-           f"&to={urllib.parse.quote(phone, safe='')}"
-           f"&body={urllib.parse.quote(message, safe='')}")
+    url = f"https://api.ultramsg.com/{instance_id}/messages/chat"
 
+    # محاولة 1: requests library (الأفضل مع Cloudflare)
     try:
-        req = urllib.request.Request(url, method='GET')
+        import requests
+        resp = requests.post(url,
+            data={'token': token, 'to': phone, 'body': message},
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            timeout=20)
+        data = resp.json()
+        if data.get('sent') == 'true' or data.get('id'):
+            return True, None
+        # إذا فشل جرّب GET
+        if resp.status_code not in (200, 201):
+            raise Exception(f"HTTP {resp.status_code}: {resp.text[:200]}")
+        return False, str(data)[:200]
+
+    except ImportError:
+        pass  # requests غير مثبت — جرّب urllib
+    except Exception as e:
+        err_str = str(e)
+        if '1010' not in err_str and '403' not in err_str:
+            return False, err_str
+        # 403/1010 = Cloudflare block — جرّب طريقة أخرى
+
+    # محاولة 2: POST مع urllib و headers متقدمة
+    try:
+        body_data = urllib.parse.urlencode({
+            'token': token, 'to': phone, 'body': message
+        }).encode('utf-8')
+        req = urllib.request.Request(url, data=body_data, method='POST')
+        req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+        req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+        req.add_header('Accept', 'application/json')
+        req.add_header('Origin', 'https://ultramsg.com')
+        req.add_header('Referer', 'https://ultramsg.com/')
         with urllib.request.urlopen(req, timeout=20) as r:
-            resp_text = r.read().decode('utf-8', 'ignore')
-            try:
-                resp = _j.loads(resp_text)
-            except Exception:
-                resp = {}
-            if resp.get('sent') == 'true' or resp.get('id'):
+            resp_text = r.read().decode('utf-8','ignore')
+            data = _j.loads(resp_text)
+            if data.get('sent') == 'true' or data.get('id'):
                 return True, None
-            return False, f"UltraMsg: {resp_text[:200]}"
-
+            return False, str(data)[:200]
     except urllib.error.HTTPError as e:
-        err_body = ''
-        try: err_body = e.read().decode('utf-8','ignore')[:300]
+        err = ''
+        try: err = e.read().decode('utf-8','ignore')[:300]
         except: pass
-        return False, f"HTTP {e.code}: {err_body}"
-
+        if '1010' in err or e.code == 403:
+            # Cloudflare يحجب Railway — استخدم بديلاً
+            return False, ("Cloudflare يحجب الطلب (error 1010). "
+                          "الحل: فعّل خيار 'Allow API access' في لوحة UltraMsg، "
+                          "أو استخدم Twilio بدلاً من UltraMsg.")
+        return False, f"HTTP {e.code}: {err}"
     except Exception as e:
         return False, str(e)
+        return False, str(e)
+
+
+
+# ══════════════════════════════════════════════════════
+#  Twilio WhatsApp Sandbox — موثوق 100%
+# ══════════════════════════════════════════════════════
+def send_whatsapp_twilio(phone: str, message: str,
+                          account_sid: str, auth_token: str,
+                          from_number: str = 'whatsapp:+14155238886') -> tuple:
+    """
+    إرسال واتساب عبر Twilio Sandbox
+    account_sid : من لوحة Twilio
+    auth_token  : من لوحة Twilio
+    from_number : رقم Sandbox الافتراضي +14155238886
+    """
+    import base64, json as _j
+
+    account_sid = (account_sid or '').strip()
+    auth_token  = (auth_token  or '').strip()
+
+    if not account_sid or not auth_token:
+        return False, "Twilio Account SID أو Auth Token مفقود"
+
+    # تنظيف رقم المستلم
+    phone = phone.strip()
+    if not phone.startswith('+'):
+        phone = '+' + phone.lstrip('0')
+    to_number = f"whatsapp:{phone}"
+
+    # Twilio Messages API
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+
+    body_data = urllib.parse.urlencode({
+        'From': from_number,
+        'To':   to_number,
+        'Body': message,
+    }).encode('utf-8')
+
+    # Basic Auth
+    credentials = base64.b64encode(f"{account_sid}:{auth_token}".encode()).decode()
+
+    req = urllib.request.Request(url, data=body_data, method='POST')
+    req.add_header('Authorization', f'Basic {credentials}')
+    req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+    req.add_header('User-Agent', 'CCMS/3.0')
+
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            resp = _j.loads(r.read().decode())
+            if resp.get('sid') and resp.get('status') not in ('failed','undelivered'):
+                log.info(f"Twilio sent OK SID={resp['sid'][:10]}...")
+                return True, None
+            return False, f"Twilio: {resp.get('error_message','فشل الإرسال')}"
+    except urllib.error.HTTPError as e:
+        err = ''
+        try: err = e.read().decode('utf-8','ignore')[:300]
+        except: pass
+        try:
+            data = _j.loads(err)
+            return False, f"Twilio: {data.get('message', err)}"
+        except Exception:
+            return False, f"HTTP {e.code}: {err}"
+    except Exception as e:
         return False, str(e)
 
 
@@ -166,16 +262,22 @@ def send_whatsapp(settings: dict, phone: str, message: str,
     """
     provider = settings.get('whatsapp_provider', 'callmebot')
 
-    log.debug(f"send_whatsapp: provider={provider}, phone={phone[:8]}***")
+    # Twilio
+    if provider == 'twilio':
+        return send_whatsapp_twilio(
+            phone, message,
+            settings.get('twilio_account_sid',''),
+            settings.get('twilio_auth_token',''),
+            settings.get('twilio_from_number','whatsapp:+14155238886'))
 
-    # UltraMsg — أولوية إذا كان المزود محدداً
-    if provider == 'ultramsg':
-        iid   = settings.get('ultramsg_instance_id','').strip()
-        token = settings.get('ultramsg_token','').strip()
-        log.debug(f"UltraMsg: instance={iid}, token_len={len(token)}")
-        return send_whatsapp_ultramsg(phone, message, iid, token)
+    # UltraMsg
+    elif provider == 'ultramsg':
+        return send_whatsapp_ultramsg(
+            phone, message,
+            settings.get('ultramsg_instance_id',''),
+            settings.get('ultramsg_token',''))
 
-    # CallMeBot — إذا كان المزود callmebot أو لدى المستخدم مفتاح شخصي
+    # CallMeBot
     elif provider == 'callmebot' or user_callmebot_key:
         key = user_callmebot_key or settings.get('whatsapp_callmebot_key','')
         return send_whatsapp_callmebot(phone, message, key)

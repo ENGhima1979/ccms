@@ -153,6 +153,18 @@
                 </label>
               </div>
               <div class="col-md-6">
+                <label class="card p-3 border-2 {% if s and s.whatsapp_provider == 'twilio' %}border-info{% else %}border-secondary{% endif %} rounded" style="cursor:pointer">
+                  <input type="radio" name="whatsapp_provider" value="twilio"
+                         class="form-check-input" {% if s and s.whatsapp_provider == 'twilio' %}checked{% endif %}
+                         onchange="toggleWAProvider(this.value)">
+                  <div class="mt-2">
+                    <div class="fw-bold" style="color:#17a2b8">🔵 Twilio Sandbox</div>
+                    <small class="text-muted">موثوق 100% — مجاني للاختبار</small>
+                    <div class="badge mt-1" style="background:#17a2b8">بديل UltraMsg</div>
+                  </div>
+                </label>
+              </div>
+              <div class="col-md-6">
                 <label class="card p-3 border-2 {% if s and s.whatsapp_provider == 'business' %}border-primary{% else %}border-secondary{% endif %} rounded" style="cursor:pointer">
                   <input type="radio" name="whatsapp_provider" value="business"
                          class="form-check-input" {% if s and s.whatsapp_provider == 'business' %}checked{% endif %}
@@ -223,9 +235,55 @@
                 <input type="text" name="test_phone_ultramsg" id="test_phone_ultramsg" class="form-control" placeholder="+966512345678" dir="ltr">
               </div>
             </div>
-            <button type="submit" name="action" value="test_whatsapp" class="btn btn-warning mt-3">
-              📱 إرسال رسالة اختبار
-            </button>
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <button type="submit" name="action" value="test_whatsapp" class="btn btn-warning">
+                📱 إرسال رسالة اختبار
+              </button>
+              <button type="submit" name="action" value="debug_ultramsg" class="btn btn-ghost btn-sm"
+                      style="font-size:12px" title="يظهر الرد الكامل من UltraMsg للتشخيص">
+                🔍 تشخيص مفصّل
+              </button>
+            </div>
+          </div>
+
+          <!-- إعدادات Twilio -->
+          <div id="twilio-section" {% if not s or s.whatsapp_provider != 'twilio' %}style="display:none"{% endif %}>
+            <div style="background:rgba(23,162,184,.07);border:1px solid rgba(23,162,184,.3);border-radius:10px;padding:16px;margin-bottom:16px">
+              <div style="font-size:14px;font-weight:800;color:#17a2b8;margin-bottom:10px">🔵 إعداد Twilio WhatsApp Sandbox</div>
+              <ol style="font-size:13px;color:var(--text2,#B0BEC5);padding-right:18px;margin:0;line-height:2">
+                <li>اذهب لـ <a href="https://www.twilio.com/try-twilio" target="_blank" style="color:#17a2b8">twilio.com</a> وسجّل حساباً مجانياً</li>
+                <li>من لوحة التحكم: <strong>Messaging → Try it out → Send a WhatsApp message</strong></li>
+                <li>أرسل الكود المعطى لرقم Sandbox من هاتفك عبر واتساب</li>
+                <li>انسخ <strong>Account SID</strong> و <strong>Auth Token</strong> من أعلى الصفحة</li>
+              </ol>
+            </div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Account SID</label>
+                <input type="text" name="twilio_account_sid" class="form-control"
+                       value="{{ s.twilio_account_sid if s and s.twilio_account_sid else '' }}"
+                       placeholder="ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Auth Token</label>
+                <input type="text" name="twilio_auth_token" class="form-control"
+                       value="{{ s.twilio_auth_token if s and s.twilio_auth_token else '' }}"
+                       placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" dir="ltr">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">رقم Twilio (اتركه كما هو للـ Sandbox)</label>
+                <input type="text" name="twilio_from_number" class="form-control"
+                       value="{{ s.twilio_from_number if s and s.twilio_from_number else 'whatsapp:+14155238886' }}"
+                       dir="ltr">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">رقم الاختبار</label>
+                <input type="text" name="test_phone_twilio" id="test_phone_twilio" class="form-control"
+                       placeholder="+966512345678" dir="ltr">
+              </div>
+            </div>
+            <button type="submit" name="action" value="test_whatsapp" class="btn mt-3"
+                    style="background:#17a2b8;color:#fff">📱 إرسال رسالة اختبار</button>
           </div>
 
           <!-- إعدادات Business API -->
@@ -361,11 +419,11 @@ function togglePass(id) {
 {% block scripts %}
 <script>
 function toggleWAProvider(val) {
-  document.getElementById('callmebot-section').style.display = val === 'callmebot' ? 'block' : 'none';
-  document.getElementById('ultramsg-section').style.display  = val === 'ultramsg'  ? 'block' : 'none';
-  document.getElementById('business-section').style.display  = val === 'business'  ? 'block' : 'none';
+  ['callmebot','ultramsg','twilio','business'].forEach(p => {
+    const el = document.getElementById(p + '-section');
+    if (el) el.style.display = val === p ? 'block' : 'none';
+  });
 }
-// تطبيق الحالة الحالية عند تحميل الصفحة
 document.addEventListener('DOMContentLoaded', function() {
   const selected = document.querySelector('input[name="whatsapp_provider"]:checked');
   if (selected) toggleWAProvider(selected.value);
