@@ -4,43 +4,66 @@
 {% block page_sub %}نظرة شاملة على نشاط المراسلات والمشاريع{% endblock %}
 
 {% block content %}
-<!-- KPIs -->
+<!-- KPIs — قابلة للضغط -->
 <div class="kpi-grid">
-  <div class="kpi" style="--kpi-color:var(--elec)">
+
+  <!-- إجمالي المراسلات → البحث المتقدم الكل -->
+  <a href="{{ url_for('advanced_search') }}" class="kpi" style="--kpi-color:var(--elec)" title="عرض جميع المراسلات">
     <div class="kpi-icon">📋</div>
     <div class="kpi-val">{{ total }}</div>
     <div class="kpi-label">إجمالي المراسلات</div>
     <div class="kpi-sub">نشطة وغير مؤرشفة</div>
-  </div>
-  <div class="kpi" style="--kpi-color:var(--sky)">
+    <div class="kpi-trend up" style="opacity:.7">← اضغط للعرض</div>
+  </a>
+
+  <!-- بريد صادر → قائمة الصادر -->
+  <a href="{{ url_for('outgoing') }}" class="kpi" style="--kpi-color:var(--sky)" title="عرض البريد الصادر">
     <div class="kpi-icon">📤</div>
     <div class="kpi-val">{{ out_c }}</div>
     <div class="kpi-label">بريد صادر</div>
-  </div>
-  <div class="kpi" style="--kpi-color:var(--mint)">
+    <div class="kpi-sub">الخطابات المرسلة</div>
+    <div class="kpi-trend up" style="opacity:.7">← اضغط للعرض</div>
+  </a>
+
+  <!-- بريد وارد → قائمة الوارد -->
+  <a href="{{ url_for('incoming') }}" class="kpi" style="--kpi-color:var(--mint)" title="عرض البريد الوارد">
     <div class="kpi-icon">📥</div>
     <div class="kpi-val">{{ in_c }}</div>
     <div class="kpi-label">بريد وارد</div>
     <div class="kpi-sub">{{ pending_reply }} في انتظار الرد</div>
-  </div>
-  <div class="kpi" style="--kpi-color:var(--danger)">
+    <div class="kpi-trend up" style="opacity:.7">← اضغط للعرض</div>
+  </a>
+
+  <!-- عاجل → بحث متقدم بفلتر الأولوية -->
+  <a href="{{ url_for('advanced_search', priority='urgent') }}" class="kpi" style="--kpi-color:var(--danger)" title="عرض المراسلات العاجلة">
     <div class="kpi-icon">⚡</div>
     <div class="kpi-val">{{ urgent }}</div>
     <div class="kpi-label">عاجل جداً</div>
     <div class="kpi-trend {% if urgent > 0 %}down{% else %}up{% endif %}">
-      {% if urgent > 0 %}⚠️ يستلزم تدخلاً{% else %}✅ لا يوجد{% endif %}
+      {% if urgent > 0 %}⚠️ يستلزم تدخلاً فورياً{% else %}✅ لا يوجد عاجل{% endif %}
     </div>
-  </div>
-  <div class="kpi" style="--kpi-color:var(--warn)">
+  </a>
+
+  <!-- في انتظار الرد → الوارد بفلتر الرد المعلق -->
+  <a href="{{ url_for('incoming') }}?reply=pending" class="kpi" style="--kpi-color:var(--warn)" title="عرض المراسلات التي تنتظر رداً">
     <div class="kpi-icon">⏳</div>
     <div class="kpi-val">{{ pending_reply }}</div>
     <div class="kpi-label">في انتظار الرد</div>
-  </div>
-  <div class="kpi" style="--kpi-color:var(--text3)">
+    <div class="kpi-sub">وارد لم يُرَد عليه</div>
+    <div class="kpi-trend {% if pending_reply > 0 %}down{% else %}up{% endif %}">
+      {% if pending_reply > 0 %}← يحتاج متابعة{% else %}✅ تم الرد على الكل{% endif %}
+    </div>
+  </a>
+
+  <!-- مسودات → بحث متقدم بفلتر الحالة -->
+  <a href="{{ url_for('advanced_search', status='draft') }}" class="kpi" style="--kpi-color:var(--text2)" title="عرض المسودات غير المرسلة">
     <div class="kpi-icon">📝</div>
     <div class="kpi-val">{{ drafts }}</div>
     <div class="kpi-label">مسودات</div>
-  </div>
+    <div class="kpi-sub">لم تُرسَل بعد</div>
+    <div class="kpi-trend up" style="opacity:.7">← اضغط للعرض</div>
+  </a>
+
 </div>
 
 <!-- Overdue Alert -->

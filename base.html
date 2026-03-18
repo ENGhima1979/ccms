@@ -143,8 +143,11 @@ input,select,textarea,button{font-family:inherit}
 /* ── KPI CARDS ──────────────────────────── */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
 .kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
-  padding:20px 18px;position:relative;overflow:hidden;transition:.3s;cursor:default}
-.kpi:hover{border-color:var(--border2);transform:translateY(-2px);box-shadow:var(--shadow)}
+  padding:20px 18px;position:relative;overflow:hidden;transition:.3s;cursor:pointer;
+  display:block;text-decoration:none;color:inherit}
+.kpi:hover{border-color:var(--kpi-color,var(--sky));transform:translateY(-3px);
+  box-shadow:0 8px 24px rgba(0,0,0,.3);text-decoration:none}
+.kpi:hover .kpi-val{opacity:.85}
 .kpi::before{content:'';position:absolute;top:0;right:0;left:0;height:3px;background:var(--kpi-color,var(--sky))}
 .kpi-icon{font-size:28px;margin-bottom:10px}
 .kpi-val{font-size:32px;font-weight:900;color:var(--kpi-color,var(--sky));line-height:1}
