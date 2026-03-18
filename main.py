@@ -1547,12 +1547,14 @@ def notification_settings_view():
                 )
                 from notifier import send_whatsapp
                 test_settings = {
-                    'whatsapp_enabled':    1,
-                    'whatsapp_provider':   provider,
+                    'whatsapp_enabled':       1,
+                    'whatsapp_provider':      provider,
                     'whatsapp_callmebot_key': callmebot_key,
-                    'whatsapp_api_url':    request.form.get('whatsapp_api_url',''),
-                    'whatsapp_api_token':  request.form.get('whatsapp_api_token',''),
-                    'whatsapp_phone_id':   request.form.get('whatsapp_phone_id',''),
+                    'ultramsg_instance_id':   request.form.get('ultramsg_instance_id',''),
+                    'ultramsg_token':         request.form.get('ultramsg_token',''),
+                    'whatsapp_api_url':       request.form.get('whatsapp_api_url',''),
+                    'whatsapp_api_token':     request.form.get('whatsapp_api_token',''),
+                    'whatsapp_phone_id':      request.form.get('whatsapp_phone_id',''),
                 }
                 ok, err = send_whatsapp(test_settings, test_phone, test_msg,
                                         user_callmebot_key=callmebot_key)
@@ -1560,6 +1562,7 @@ def notification_settings_view():
                     flash(f'✅ تم إرسال رسالة اختبار واتساب إلى {test_phone}', 'success')
                 else:
                     flash(f'❌ فشل الإرسال: {err}', 'error')
+
 
         else:  # save
             vals = (
@@ -1574,8 +1577,10 @@ def notification_settings_view():
                 int(request.form.get('whatsapp_enabled', 0)),
                 request.form.get('whatsapp_provider','callmebot'),
                 request.form.get('test_callmebot_key','') or (s.get('whatsapp_callmebot_key','') if s else ''),
+                request.form.get('ultramsg_instance_id','') or (s.get('ultramsg_instance_id','') if s else ''),
+                request.form.get('ultramsg_token','') or (s.get('ultramsg_token','') if s else ''),
                 request.form.get('whatsapp_api_url',''),
-                request.form.get('whatsapp_api_token','') or (s['whatsapp_api_token'] if s else ''),
+                request.form.get('whatsapp_api_token','') or (s['whatsapp_api_token'] if s and s.get('whatsapp_api_token') else ''),
                 request.form.get('whatsapp_phone_id',''),
                 int(request.form.get('notify_new_incoming', 1)),
                 int(request.form.get('notify_due_soon', 1)),
@@ -1589,19 +1594,21 @@ def notification_settings_view():
                 conn.execute("""UPDATE notification_settings SET
                     email_enabled=?,smtp_host=?,smtp_port=?,smtp_user=?,smtp_password=?,
                     smtp_from_name=?,smtp_use_tls=?,whatsapp_enabled=?,whatsapp_provider=?,
-                    whatsapp_callmebot_key=?,whatsapp_api_url=?,
-                    whatsapp_api_token=?,whatsapp_phone_id=?,notify_new_incoming=?,
-                    notify_due_soon=?,notify_overdue=?,notify_workflow=?,notify_assigned=?,
-                    due_soon_hours=?,updated_at=? WHERE company_id=?""",
+                    whatsapp_callmebot_key=?,ultramsg_instance_id=?,ultramsg_token=?,
+                    whatsapp_api_url=?,whatsapp_api_token=?,whatsapp_phone_id=?,
+                    notify_new_incoming=?,notify_due_soon=?,notify_overdue=?,
+                    notify_workflow=?,notify_assigned=?,due_soon_hours=?,updated_at=?
+                    WHERE company_id=?""",
                     vals[1:] + (cid,))
             else:
                 conn.execute("""INSERT INTO notification_settings
                     (company_id,email_enabled,smtp_host,smtp_port,smtp_user,smtp_password,
                      smtp_from_name,smtp_use_tls,whatsapp_enabled,whatsapp_provider,
-                     whatsapp_callmebot_key,whatsapp_api_url,
-                     whatsapp_api_token,whatsapp_phone_id,notify_new_incoming,notify_due_soon,
-                     notify_overdue,notify_workflow,notify_assigned,due_soon_hours,created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", vals)
+                     whatsapp_callmebot_key,ultramsg_instance_id,ultramsg_token,
+                     whatsapp_api_url,whatsapp_api_token,whatsapp_phone_id,
+                     notify_new_incoming,notify_due_soon,notify_overdue,
+                     notify_workflow,notify_assigned,due_soon_hours,created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", vals)
             
             # Also save AI key to company metadata
             ai_key = request.form.get('ai_api_key','')
