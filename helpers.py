@@ -137,65 +137,76 @@ def generate_letter_pdf(corr, company, attachments=None, include_letterhead=True
     logo_path = company.get('logo_path','')
 
     # --- HEADER with LOGO ------------------------------------------
-    # بناء عمود الشعار + اسم الشركة
-    logo_cell_items = []
+    # بناء رأس الصفحة: شعار + اسم الشركة (يسار) | بيانات الاتصال (يمين)
 
-    # إضافة الشعار إذا وُجد
+    # الشعار: نحدد أبعاده أولاً قبل إدراجه في الجدول
+    logo_img = None
     if logo_path:
-        # حاول المسارات المختلفة
         possible_paths = [
             os.path.join(BASE, 'instance', 'uploads', logo_path),
             os.path.join(BASE, 'static', logo_path),
             os.path.join(BASE, logo_path),
         ]
-        logo_file = None
         for lp in possible_paths:
             if os.path.exists(lp):
-                logo_file = lp
+                try:
+                    from reportlab.platypus import Image as RLImage
+                    from PIL import Image as PILImage
+                    pil_img = PILImage.open(lp)
+                    orig_w, orig_h = pil_img.size
+                    logo_w = 2.5 * cm
+                    logo_h = logo_w * (orig_h / orig_w)
+                    if logo_h > 2.2 * cm:
+                        logo_h = 2.2 * cm
+                        logo_w = logo_h * (orig_w / orig_h)
+                    logo_img = RLImage(lp, width=logo_w, height=logo_h)
+                    logo_img.hAlign = 'RIGHT'
+                except Exception:
+                    logo_img = None
                 break
-        if logo_file:
-            try:
-                from reportlab.platypus import Image as RLImage
-                from PIL import Image as PILImage
-                pil_img = PILImage.open(logo_file)
-                orig_w, orig_h = pil_img.size
-                # حجم الشعار: عرض 3cm، ارتفاع نسبي
-                logo_w = 3 * cm
-                logo_h = logo_w * (orig_h / orig_w)
-                if logo_h > 2.5 * cm:
-                    logo_h = 2.5 * cm
-                    logo_w = logo_h * (orig_w / orig_h)
-                rl_logo = RLImage(logo_file, width=logo_w, height=logo_h)
-                logo_cell_items.append(rl_logo)
-            except Exception:
-                pass
 
     # اسم الشركة
-    logo_cell_items.append(
-        Paragraph(f"<b>{ar(co_name)}</b>",
-            ParagraphStyle('hl', fontName=afb, fontSize=16, alignment=TA_RIGHT,
-                           textColor=primary, leading=22, spaceAfter=2))
-    )
+    co_name_para = Paragraph(
+        f"<b>{ar(co_name)}</b>",
+        ParagraphStyle('hl', fontName=afb, fontSize=16, alignment=TA_RIGHT,
+                       textColor=primary, leading=22, spaceAfter=0))
 
-    # دمج عناصر عمود الشعار
-    from reportlab.platypus import KeepTogether
-    logo_cell = KeepTogether(logo_cell_items)
-
-    # عمود بيانات الاتصال
+    # بيانات الاتصال
     hdr_right_lines = []
     if co_phone: hdr_right_lines.append(f"{ar('هاتف')}: {co_phone}")
     if co_email: hdr_right_lines.append(f"{ar('بريد')}: {co_email}")
     if co_addr:  hdr_right_lines.append(ar(co_addr))
     if co_cr:    hdr_right_lines.append(f"{ar('س.ت')}: {co_cr}")
-    hdr_right = Paragraph("<br/>".join(hdr_right_lines) if hdr_right_lines else ar(co_name),
-                ParagraphStyle('hr', fontName=af, fontSize=9, alignment=TA_RIGHT,
-                               textColor=colors.grey, leading=15))
+    hdr_right = Paragraph(
+        "<br/>".join(hdr_right_lines) if hdr_right_lines else "",
+        ParagraphStyle('hr', fontName=af, fontSize=9, alignment=TA_RIGHT,
+                       textColor=colors.grey, leading=15))
+
+    # بناء خلية الشعار + الاسم بدون KeepTogether
+    if logo_img:
+        # جدول داخلي: شعار فوق الاسم
+        inner = Table(
+            [[logo_img], [co_name_para]],
+            colWidths=[9*cm],
+            rowHeights=None
+        )
+        inner.setStyle(TableStyle([
+            ('ALIGN',  (0,0),(-1,-1),'RIGHT'),
+            ('VALIGN', (0,0),(-1,-1),'MIDDLE'),
+            ('TOPPADDING',    (0,0),(-1,-1), 2),
+            ('BOTTOMPADDING', (0,0),(-1,-1), 2),
+        ]))
+        logo_cell = inner
+    else:
+        logo_cell = co_name_para
 
     hdr = Table([[logo_cell, hdr_right]], colWidths=[9*cm, 8.4*cm])
     hdr.setStyle(TableStyle([
-        ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
-        ('LINEBELOW',(0,0),(-1,-1), 2.5, primary),
-        ('BOTTOMPADDING',(0,0),(-1,-1), 10),
+        ('VALIGN',        (0,0),(-1,-1),'MIDDLE'),
+        ('ALIGN',         (0,0),(-1,-1),'RIGHT'),
+        ('LINEBELOW',     (0,0),(-1,-1), 2.5, primary),
+        ('BOTTOMPADDING', (0,0),(-1,-1), 10),
+        ('TOPPADDING',    (0,0),(-1,-1), 4),
     ]))
     story.append(hdr)
     story.append(Spacer(1, 0.4*cm))
@@ -349,4 +360,3 @@ def generate_qr_svg(data):
     """Generate QR code SVG as base64"""
     from qr_simple import generate_qr_b64
     return generate_qr_b64(data)
-
