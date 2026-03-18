@@ -110,6 +110,7 @@ CREATE TABLE IF NOT EXISTS users (
     phone           TEXT,
     password_hash   TEXT NOT NULL,
     role            TEXT NOT NULL DEFAULT 'user',
+    callmebot_key   TEXT,           -- مفتاح CallMeBot الشخصي للواتساب المجاني
     permissions_json TEXT DEFAULT '{}',
     is_active       INTEGER DEFAULT 1,
     all_projects    INTEGER DEFAULT 0,
@@ -445,6 +446,10 @@ CREATE TABLE IF NOT EXISTS notification_settings (
     smtp_use_tls    INTEGER DEFAULT 1,
     -- إعدادات واتساب
     whatsapp_enabled     INTEGER DEFAULT 0,
+    whatsapp_provider    TEXT DEFAULT 'callmebot',  -- callmebot | business_api
+    -- CallMeBot (مجاني — رقمك الشخصي)
+    whatsapp_callmebot_key  TEXT,   -- مفتاح API من CallMeBot
+    -- WhatsApp Business API (رسمي)
     whatsapp_api_url     TEXT,
     whatsapp_api_token   TEXT,
     whatsapp_phone_id    TEXT,
@@ -645,6 +650,9 @@ def _migrate_db(conn):
         "ALTER TABLE audit_log ADD COLUMN user_agent TEXT",
         "ALTER TABLE workflow_steps ADD COLUMN due_date TEXT",
         "ALTER TABLE correspondence ADD COLUMN workflow_status TEXT DEFAULT 'none'",
+        "ALTER TABLE notification_settings ADD COLUMN whatsapp_provider TEXT DEFAULT 'callmebot'",
+        "ALTER TABLE notification_settings ADD COLUMN whatsapp_callmebot_key TEXT",
+        "ALTER TABLE users ADD COLUMN callmebot_key TEXT",
     ]
     for sql in col_migrations:
         try:

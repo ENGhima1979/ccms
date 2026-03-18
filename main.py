@@ -1532,19 +1532,34 @@ def notification_settings_view():
                 flash(f'❌ فشل الإرسال: {err}', 'error')
 
         elif action == 'test_whatsapp':
-            test_phone = request.form.get('test_phone','')
-            test_settings = {
-                'whatsapp_enabled': 1,
-                'whatsapp_api_url': request.form.get('whatsapp_api_url',''),
-                'whatsapp_api_token': request.form.get('whatsapp_api_token',''),
-                'whatsapp_phone_id': request.form.get('whatsapp_phone_id',''),
-            }
-            from notifier import send_whatsapp
-            ok, err = send_whatsapp(test_settings, test_phone, '✅ رسالة اختبار من نظام CCMS - الإعدادات تعمل بشكل صحيح.')
-            if ok:
-                flash('✅ تم إرسال رسالة واتساب التجريبية بنجاح', 'success')
+            test_phone = request.form.get('test_phone','').strip()
+            provider   = request.form.get('whatsapp_provider','callmebot')
+            callmebot_key = request.form.get('test_callmebot_key','').strip()
+
+            if not test_phone:
+                flash('يرجى إدخال رقم هاتف للاختبار','error')
             else:
-                flash(f'❌ فشل الإرسال: {err}', 'error')
+                test_msg = (
+                    '*CCMS — رسالة اختبار*\n'
+                    '─────────────────────\n'
+                    '✅ الإشعارات تعمل بشكل صحيح!\n'
+                    '_نظام إدارة المراسلات الإدارية_'
+                )
+                from notifier import send_whatsapp
+                test_settings = {
+                    'whatsapp_enabled':    1,
+                    'whatsapp_provider':   provider,
+                    'whatsapp_callmebot_key': callmebot_key,
+                    'whatsapp_api_url':    request.form.get('whatsapp_api_url',''),
+                    'whatsapp_api_token':  request.form.get('whatsapp_api_token',''),
+                    'whatsapp_phone_id':   request.form.get('whatsapp_phone_id',''),
+                }
+                ok, err = send_whatsapp(test_settings, test_phone, test_msg,
+                                        user_callmebot_key=callmebot_key)
+                if ok:
+                    flash(f'✅ تم إرسال رسالة اختبار واتساب إلى {test_phone}', 'success')
+                else:
+                    flash(f'❌ فشل الإرسال: {err}', 'error')
 
         else:  # save
             vals = (
@@ -1557,6 +1572,8 @@ def notification_settings_view():
                 request.form.get('smtp_from_name',''),
                 int(request.form.get('smtp_use_tls', 1)),
                 int(request.form.get('whatsapp_enabled', 0)),
+                request.form.get('whatsapp_provider','callmebot'),
+                request.form.get('test_callmebot_key','') or (s.get('whatsapp_callmebot_key','') if s else ''),
                 request.form.get('whatsapp_api_url',''),
                 request.form.get('whatsapp_api_token','') or (s['whatsapp_api_token'] if s else ''),
                 request.form.get('whatsapp_phone_id',''),
@@ -1571,7 +1588,8 @@ def notification_settings_view():
             if s:
                 conn.execute("""UPDATE notification_settings SET
                     email_enabled=?,smtp_host=?,smtp_port=?,smtp_user=?,smtp_password=?,
-                    smtp_from_name=?,smtp_use_tls=?,whatsapp_enabled=?,whatsapp_api_url=?,
+                    smtp_from_name=?,smtp_use_tls=?,whatsapp_enabled=?,whatsapp_provider=?,
+                    whatsapp_callmebot_key=?,whatsapp_api_url=?,
                     whatsapp_api_token=?,whatsapp_phone_id=?,notify_new_incoming=?,
                     notify_due_soon=?,notify_overdue=?,notify_workflow=?,notify_assigned=?,
                     due_soon_hours=?,updated_at=? WHERE company_id=?""",
@@ -1579,11 +1597,11 @@ def notification_settings_view():
             else:
                 conn.execute("""INSERT INTO notification_settings
                     (company_id,email_enabled,smtp_host,smtp_port,smtp_user,smtp_password,
-                     smtp_from_name,smtp_use_tls,whatsapp_enabled,whatsapp_api_url,
+                     smtp_from_name,smtp_use_tls,whatsapp_enabled,whatsapp_provider,
+                     whatsapp_callmebot_key,whatsapp_api_url,
                      whatsapp_api_token,whatsapp_phone_id,notify_new_incoming,notify_due_soon,
                      notify_overdue,notify_workflow,notify_assigned,due_soon_hours,created_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", vals)
-            conn.commit()
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""", vals)
             
             # Also save AI key to company metadata
             ai_key = request.form.get('ai_api_key','')
@@ -1758,8 +1776,8 @@ def new_user():
         all_proj_flag = 1 if (request.form.get('all_projects') or request.form.get('role') in ('admin','super_admin')) else 0
         conn.execute("""INSERT INTO users
             (id,company_id,department_id,username,email,full_name,full_name_en,
-             job_title,phone,password_hash,role,is_active,all_projects,created_at,created_by)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)""",
+             job_title,phone,callmebot_key,password_hash,role,is_active,all_projects,created_at,created_by)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?)""",
             (uid,cid,
              request.form.get('department_id','') or None,
              un,
@@ -1768,6 +1786,7 @@ def new_user():
              request.form.get('full_name_en','').strip(),
              request.form.get('job_title','').strip(),
              request.form.get('phone','').strip(),
+             request.form.get('callmebot_key','').strip(),
              generate_password_hash(request.form.get('password','')),
              request.form.get('role','user'),
              all_proj_flag, now(), session['user_id']))
