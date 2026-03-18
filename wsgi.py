@@ -11,7 +11,8 @@ def organize_files():
         if not os.path.isfile(fp): continue
         if f.endswith('.html'):
             dst = os.path.join(BASE, 'templates', f)
-            if not os.path.exists(dst): shutil.copy2(fp, dst)
+            # دائماً انسخ — لا تتحقق من الوجود (يضمن تحديث الملفات عند كل نشر)
+            shutil.copy2(fp, dst)
         elif f.endswith('.ttf'):
             dst = os.path.join(BASE, 'fonts', f)
             if not os.path.exists(dst): shutil.copy2(fp, dst)
@@ -22,12 +23,12 @@ def organize_files():
         src = os.path.join(BASE, fname)
         if os.path.exists(src):
             dst = os.path.join(BASE, 'translations', fname)
-            if not os.path.exists(dst): shutil.copy2(src, dst)
+            shutil.copy2(src, dst)  # دائماً حدّث
     for fname in ['manifest.json', 'sw.js']:
         src = os.path.join(BASE, fname)
         if os.path.exists(src):
             dst = os.path.join(BASE, 'static', fname)
-            if not os.path.exists(dst): shutil.copy2(src, dst)
+            shutil.copy2(src, dst)  # دائماً حدّث
     print("Files organized")
 
 try:
