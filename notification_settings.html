@@ -214,8 +214,9 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label">Token</label>
-                <input type="password" name="ultramsg_token" class="form-control"
-                       placeholder="{{ '••••••••' if s and s.ultramsg_token else 'xxxxxxxxxxxxxxxx' }}">
+                <input type="text" name="ultramsg_token" class="form-control"
+                       value="{{ s.ultramsg_token if s and s.ultramsg_token else '' }}"
+                       placeholder="xxxxxxxxxxxxxxxx" dir="ltr">
               </div>
               <div class="col-md-6">
                 <label class="form-label">رقم الاختبار</label>

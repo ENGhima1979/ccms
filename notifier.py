@@ -105,20 +105,73 @@ def send_whatsapp_business(phone: str, message: str, settings: dict) -> tuple:
 
 
 # ══════════════════════════════════════════════════════
+#  UltraMsg — ربط رقمك الشخصي عبر QR
+# ══════════════════════════════════════════════════════
+def send_whatsapp_ultramsg(phone: str, message: str,
+                            instance_id: str, token: str) -> tuple:
+    """
+    إرسال واتساب عبر UltraMsg (ربط رقمك الشخصي بـ QR)
+    instance_id: من لوحة UltraMsg
+    token: من لوحة UltraMsg
+    """
+    if not instance_id or not token:
+        return False, "instance_id أو token مفقود"
+
+    # تنظيف الرقم
+    phone = phone.strip().replace('+','').replace(' ','').replace('-','')
+    if not phone.startswith('966') and len(phone) == 9:
+        phone = '966' + phone
+
+    payload = urllib.parse.urlencode({
+        'token': token,
+        'to':    phone,
+        'body':  message,
+    }).encode('utf-8')
+
+    url = f"https://api.ultramsg.com/{instance_id}/messages/chat"
+    req = urllib.request.Request(url, data=payload,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            resp = json.loads(r.read().decode())
+            if resp.get('sent') == 'true' or resp.get('id'):
+                log.info(f"UltraMsg sent to {phone[:7]}***")
+                return True, None
+            return False, str(resp)
+    except Exception as e:
+        log.warning(f"UltraMsg error: {e}")
+        return False, str(e)
+
+
+# ══════════════════════════════════════════════════════
 #  دالة واتساب الموحّدة
 # ══════════════════════════════════════════════════════
 def send_whatsapp(settings: dict, phone: str, message: str,
                   user_callmebot_key: str = "") -> tuple:
     """
     إرسال واتساب — تختار المزود تلقائياً:
-    - إذا كان لدى المستخدم callmebot_key → CallMeBot (مجاني)
-    - إذا كانت إعدادات Business API موجودة → Business API
+    - callmebot  → CallMeBot (مجاني — رقم شخصي)
+    - ultramsg   → UltraMsg  (مجاني — ربط رقمك بـ QR)
+    - business   → WhatsApp Business API (رسمي)
     """
     provider = settings.get('whatsapp_provider', 'callmebot')
 
-    if provider == 'callmebot' or user_callmebot_key:
+    log.debug(f"send_whatsapp: provider={provider}, phone={phone[:8]}***")
+
+    # UltraMsg — أولوية إذا كان المزود محدداً
+    if provider == 'ultramsg':
+        iid   = settings.get('ultramsg_instance_id','').strip()
+        token = settings.get('ultramsg_token','').strip()
+        log.debug(f"UltraMsg: instance={iid}, token_len={len(token)}")
+        return send_whatsapp_ultramsg(phone, message, iid, token)
+
+    # CallMeBot — إذا كان المزود callmebot أو لدى المستخدم مفتاح شخصي
+    elif provider == 'callmebot' or user_callmebot_key:
         key = user_callmebot_key or settings.get('whatsapp_callmebot_key','')
         return send_whatsapp_callmebot(phone, message, key)
+
+    # Business API
     else:
         return send_whatsapp_business(phone, message, settings)
 
