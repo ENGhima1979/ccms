@@ -109,70 +109,47 @@ def send_whatsapp_business(phone: str, message: str, settings: dict) -> tuple:
 # ══════════════════════════════════════════════════════
 def send_whatsapp_ultramsg(phone: str, message: str,
                             instance_id: str, token: str) -> tuple:
-    """
-    إرسال واتساب عبر UltraMsg
-    instance_id: مثال instance123456 (من لوحة UltraMsg)
-    token: المفتاح السري من لوحة UltraMsg
-    """
+    """إرسال واتساب عبر UltraMsg — GET request"""
+    import json as _j
     instance_id = (instance_id or '').strip()
     token       = (token or '').strip()
 
     if not instance_id or not token:
-        return False, "instance_id أو token مفقود — تحقق من الإعدادات"
+        return False, "instance_id أو token مفقود"
 
-    # تنظيف الرقم — UltraMsg يريد الرقم بدون + مع رمز الدولة
+    # تنظيف رقم الهاتف
     phone = phone.strip().replace('+','').replace(' ','').replace('-','')
-    # إضافة 966 إذا لم تكن موجودة
     if phone.startswith('0') and len(phone) == 10:
         phone = '966' + phone[1:]
     elif not phone.startswith('966') and len(phone) == 9:
         phone = '966' + phone
 
-    # UltraMsg API — GET request مع parameters في URL (الطريقة الوحيدة التي تعمل)
-    encoded_body = urllib.parse.quote(message, safe='')
+    # GET request — نفس صيغة المتصفح التي نجحت
     url = (f"https://api.ultramsg.com/{instance_id}/messages/chat"
            f"?token={urllib.parse.quote(token, safe='')}"
            f"&to={urllib.parse.quote(phone, safe='')}"
-           f"&body={encoded_body}")
-
-    req = urllib.request.Request(url, method='GET')
-
+           f"&body={urllib.parse.quote(message, safe='')}")
 
     try:
+        req = urllib.request.Request(url, method='GET')
         with urllib.request.urlopen(req, timeout=20) as r:
             resp_text = r.read().decode('utf-8', 'ignore')
             try:
-                resp = _json.loads(resp_text)
+                resp = _j.loads(resp_text)
             except Exception:
                 resp = {}
-            # UltraMsg returns {"sent":"true","id":"xxx"} on success
             if resp.get('sent') == 'true' or resp.get('id'):
-                log.info(f"UltraMsg sent OK to {phone[:7]}***")
                 return True, None
-            # Check for error in response
-            err_msg = resp.get('error') or resp.get('message') or resp_text[:150]
-            return False, f"UltraMsg رد: {err_msg}"
+            return False, f"UltraMsg: {resp_text[:200]}"
 
     except urllib.error.HTTPError as e:
-        try:
-            err_body = e.read().decode('utf-8','ignore')[:300]
-        except Exception:
-            err_body = str(e)
-        log.warning(f"UltraMsg HTTP {e.code}: {err_body}")
-
-        # تفسير أخطاء UltraMsg الشائعة
-        hints = {
-            403: "Token غير صحيح أو Instance ID خاطئ — تحقق من لوحة UltraMsg",
-            401: "غير مصرح — Token منتهي الصلاحية أو خاطئ",
-            404: "Instance ID غير موجود — تحقق من الاسم بالضبط",
-            429: "تجاوزت الحد المسموح من الرسائل",
-            503: "UltraMsg غير متاح حالياً — حاول لاحقاً",
-        }
-        hint = hints.get(e.code, err_body)
-        return False, f"HTTP {e.code}: {hint}"
+        err_body = ''
+        try: err_body = e.read().decode('utf-8','ignore')[:300]
+        except: pass
+        return False, f"HTTP {e.code}: {err_body}"
 
     except Exception as e:
-        log.warning(f"UltraMsg error: {e}")
+        return False, str(e)
         return False, str(e)
 
 
