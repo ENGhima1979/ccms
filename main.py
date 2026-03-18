@@ -1532,8 +1532,14 @@ def notification_settings_view():
                 flash(f'❌ فشل الإرسال: {err}', 'error')
 
         elif action == 'test_whatsapp':
-            test_phone = request.form.get('test_phone','').strip()
-            provider   = request.form.get('whatsapp_provider','callmebot')
+            provider = request.form.get('whatsapp_provider','callmebot')
+            # كل قسم له حقل رقم هاتف مستقل لتجنب التعارض
+            if provider == 'ultramsg':
+                test_phone = request.form.get('test_phone_ultramsg','').strip()
+            elif provider == 'business':
+                test_phone = request.form.get('test_phone_business','').strip()
+            else:
+                test_phone = request.form.get('test_phone_callmebot','').strip()
             callmebot_key = request.form.get('test_callmebot_key','').strip()
 
             if not test_phone:
