@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>تسجيل شركة جديدة — CCMS Professional</title>
+<style>
+:root{--bg:#030B1F;--bg2:#0D1B3A;--card:#0A1628;--sky:#00B4D8;--mint:#06FFA5;
+      --gold:#FFC107;--t1:#ECEFF1;--t2:#B0BEC5;--t3:#546E7A;
+      --border:rgba(255,255,255,.08);--r:12px;--danger:#FF3860}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:var(--bg);
+     color:var(--t1);min-height:100vh;display:flex;flex-direction:column;direction:rtl}
+body::before{content:'';position:fixed;inset:0;
+  background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(0,180,216,.12),transparent);
+  pointer-events:none}
+
+.top-bar{padding:16px 5%;display:flex;align-items:center;justify-content:space-between;
+         border-bottom:1px solid var(--border)}
+.logo{font-size:20px;font-weight:900;color:var(--sky);text-decoration:none}
+.logo span{color:var(--mint)}
+.login-link{font-size:14px;color:var(--t3)}
+.login-link a{color:var(--sky);text-decoration:none;font-weight:700}
+
+.main{flex:1;display:flex;align-items:center;justify-content:center;padding:40px 5%}
+.container{display:grid;grid-template-columns:1fr 1fr;gap:48px;max-width:1000px;width:100%;align-items:start}
+
+/* Left: form */
+.form-wrap{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:40px}
+.form-title{font-size:26px;font-weight:900;margin-bottom:6px}
+.form-sub{font-size:14px;color:var(--t3);margin-bottom:28px}
+.form-group{margin-bottom:18px}
+.form-label{display:block;font-size:12px;font-weight:700;color:var(--t2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px}
+.req{color:var(--danger);margin-left:3px}
+.form-control{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--border);
+              border-radius:8px;padding:11px 14px;color:var(--t1);font-size:14px;
+              font-family:inherit;direction:rtl;transition:.2s}
+.form-control:focus{outline:none;border-color:var(--sky);background:rgba(0,180,216,.06)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.plan-selector{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px}
+.plan-opt{border:1px solid var(--border);border-radius:8px;padding:12px;cursor:pointer;
+          transition:.2s;position:relative}
+.plan-opt:hover{border-color:var(--sky)}
+.plan-opt input{position:absolute;opacity:0}
+.plan-opt.selected{border-color:var(--mint);background:rgba(6,255,165,.06)}
+.plan-opt-icon{font-size:20px;margin-bottom:4px}
+.plan-opt-name{font-size:13px;font-weight:800;color:var(--t1)}
+.plan-opt-price{font-size:11px;color:var(--t3)}
+.plan-opt-trial{font-size:10px;color:var(--mint);font-weight:700;margin-top:2px}
+.submit-btn{width:100%;background:linear-gradient(135deg,var(--sky),var(--mint));
+            color:#000;border:none;border-radius:9px;padding:14px;font-size:16px;
+            font-weight:900;cursor:pointer;transition:.2s;margin-top:8px;font-family:inherit}
+.submit-btn:hover{opacity:.9;transform:translateY(-1px)}
+.terms{font-size:12px;color:var(--t3);text-align:center;margin-top:14px;line-height:1.6}
+.flash-box{padding:12px 16px;border-radius:8px;margin-bottom:18px;font-size:13px;font-weight:600}
+.flash-error{background:rgba(255,56,96,.12);border:1px solid rgba(255,56,96,.3);color:#ff6b87}
+.flash-success{background:rgba(6,255,165,.1);border:1px solid rgba(6,255,165,.3);color:var(--mint)}
+
+/* Right: plan details */
+.plan-info{position:sticky;top:24px}
+.plan-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;margin-bottom:16px}
+.trial-banner{background:linear-gradient(135deg,rgba(6,255,165,.1),rgba(0,180,216,.1));
+              border:1px solid rgba(6,255,165,.3);border-radius:12px;padding:20px;text-align:center}
+.trial-banner h3{font-size:18px;font-weight:900;color:var(--mint);margin-bottom:6px}
+.trial-banner p{font-size:13px;color:var(--t2);line-height:1.6}
+.feature-list{list-style:none;margin-top:16px}
+.feature-list li{display:flex;align-items:center;gap:8px;font-size:13px;
+                 color:var(--t2);padding:6px 0;border-bottom:1px solid var(--border)}
+.feature-list li::before{content:'✓';color:var(--mint);font-weight:900;flex-shrink:0}
+
+@media(max-width:768px){
+  .container{grid-template-columns:1fr}
+  .plan-info{display:none}
+  .form-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="{{ url_for('landing') }}" class="logo">CCMS <span>Pro</span></a>
+  <div class="login-link">لديك حساب؟ <a href="{{ url_for('login') }}">سجّل الدخول</a></div>
+</div>
+
+<div class="main">
+  <div class="container">
+
+    <!-- FORM -->
+    <div class="form-wrap">
+      <div class="form-title">سجّل شركتك الآن</div>
+      <div class="form-sub">ابدأ تجربة مجانية 14 يوماً — لا بطاقة ائتمانية</div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+      <div class="flash-box flash-{{ cat }}">{{ msg }}</div>
+      {% endfor %}
+      {% endwith %}
+
+      <form method="POST">
+        <!-- بيانات الشركة -->
+        <div class="form-group">
+          <label class="form-label"><span class="req">*</span> اسم الشركة</label>
+          <input name="company_name" class="form-control" value="{{ form.company_name or '' }}"
+                 required placeholder="مثال: مجموعة الإنشاء المتحدة">
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> كود الشركة</label>
+            <input name="company_code" class="form-control" value="{{ form.company_code or '' }}"
+                   required placeholder="مثال: MUI" maxlength="10"
+                   style="text-transform:uppercase"
+                   oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">المدينة</label>
+            <input name="city" class="form-control" value="{{ form.city or '' }}" placeholder="الرياض">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">البريد الإلكتروني للشركة</label>
+          <input type="email" name="company_email" class="form-control"
+                 value="{{ form.company_email or '' }}" placeholder="info@company.sa">
+        </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:20px 0">
+
+        <!-- بيانات المدير -->
+        <div class="form-group">
+          <label class="form-label"><span class="req">*</span> الاسم الكامل للمدير</label>
+          <input name="admin_name" class="form-control" value="{{ form.admin_name or '' }}"
+                 required placeholder="الاسم الثلاثي">
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> اسم المستخدم</label>
+            <input name="admin_username" class="form-control" value="{{ form.admin_username or '' }}"
+                   required placeholder="بدون مسافات">
+          </div>
+          <div class="form-group">
+            <label class="form-label"><span class="req">*</span> كلمة المرور</label>
+            <input type="password" name="admin_password" class="form-control"
+                   required placeholder="8 أحرف على الأقل" minlength="8">
+          </div>
+        </div>
+
+        <!-- اختيار الخطة -->
+        <div class="form-group">
+          <label class="form-label">اختر خطتك</label>
+          <div class="plan-selector" id="planSelector">
+            {% for key, plan in plans.items() %}
+            <label class="plan-opt {% if (selected_plan or 'trial')==key %}selected{% endif %}" onclick="selectPlan('{{key}}',this)">
+              <input type="radio" name="plan" value="{{ key }}" {% if (selected_plan or 'trial')==key %}checked{% endif %}>
+              <div class="plan-opt-icon">{{ plan.icon }}</div>
+              <div class="plan-opt-name">{{ plan.name }}</div>
+              <div class="plan-opt-price">{% if plan.price_sar == 0 %}مجاني{% else %}{{ plan.price_sar }} ر.س/شهر{% endif %}</div>
+              {% if key == 'trial' %}<div class="plan-opt-trial">14 يوم مجاناً</div>{% endif %}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn">🚀 إنشاء الحساب والبدء</button>
+        <div class="terms">بالتسجيل توافق على شروط الاستخدام وسياسة الخصوصية</div>
+      </form>
+    </div>
+
+    <!-- PLAN INFO -->
+    <div class="plan-info">
+      <div class="trial-banner">
+        <h3>🎁 14 يوم مجاناً</h3>
+        <p>جرّب جميع مميزات النظام بدون أي التزام — لا بطاقة ائتمانية مطلوبة</p>
+      </div>
+      <div class="plan-card" style="margin-top:16px">
+        <div style="font-size:15px;font-weight:800;margin-bottom:14px;color:var(--sky)">✅ ماذا تحصل عليه؟</div>
+        <ul class="feature-list">
+          <li>إدارة كاملة للمراسلات الصادرة والواردة والداخلية</li>
+          <li>سير عمل هرمي مخصص للاعتماد</li>
+          <li>توقيع رقمي وختم PDF احترافي</li>
+          <li>قراءة المرفقات تلقائياً بتقنية OCR</li>
+          <li>تقارير قابلة للتصدير Excel/PDF</li>
+          <li>تطبيق جوال PWA يعمل على iOS وAndroid</li>
+          <li>مساعد ذكاء اصطناعي لاقتراح التصنيف والأولوية</li>
+          <li>دعم كامل للغة العربية RTL</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function selectPlan(key, el){
+  document.querySelectorAll('.plan-opt').forEach(o=>o.classList.remove('selected'))
+  el.classList.add('selected')
+  el.querySelector('input').checked=true
+}
+</script>
+</body>
+</html>

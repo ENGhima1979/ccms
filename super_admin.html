@@ -1,211 +1,244 @@
 {% extends 'base.html' %}
-{% block title %}إدارة الشركات{% endblock %}
+{% block title %}لوحة تحكم SaaS{% endblock %}
+{% block page_title %}🏢 لوحة تحكم SaaS{% endblock %}
+{% block page_sub %}إدارة جميع الشركات والاشتراكات{% endblock %}
+
 {% block content %}
-<div class="page-header">
-  <h1 class="page-title">🏢 إدارة الشركات — Multi-tenant</h1>
-  <a href="{{ url_for('new_company') }}" class="btn btn-electric">+ شركة جديدة</a>
+<!-- KPIs -->
+<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
+  <div class="kpi" style="--kpi-color:var(--sky)">
+    <div class="kpi-icon">🏢</div>
+    <div class="kpi-val">{{ total_stats|length }}</div>
+    <div class="kpi-label">إجمالي الشركات</div>
+  </div>
+  <a href="?status=active" class="kpi" style="--kpi-color:var(--mint)">
+    <div class="kpi-icon">✅</div>
+    <div class="kpi-val">{{ total_stats|selectattr('co.is_active')|list|length }}</div>
+    <div class="kpi-label">نشطة</div>
+  </a>
+  <a href="?status=expiring" class="kpi" style="--kpi-color:var(--gold)">
+    <div class="kpi-icon">⏰</div>
+    <div class="kpi-val">{{ total_stats|selectattr('sub.days_left')|list|length }}</div>
+    <div class="kpi-label">تنتهي قريباً</div>
+  </a>
+  <a href="?status=expired" class="kpi" style="--kpi-color:var(--danger)">
+    <div class="kpi-icon">❌</div>
+    <div class="kpi-val">{{ total_stats|selectattr('sub.is_expired')|list|length }}</div>
+    <div class="kpi-label">منتهية</div>
+  </a>
+  <div class="kpi" style="--kpi-color:#a855f7">
+    <div class="kpi-icon">👥</div>
+    <div class="kpi-val">{{ total_stats|sum(attribute='co.user_count') }}</div>
+    <div class="kpi-label">إجمالي المستخدمين</div>
+  </div>
+  <div class="kpi" style="--kpi-color:var(--sky)">
+    <div class="kpi-icon">📋</div>
+    <div class="kpi-val">{{ total_stats|sum(attribute='co.corr_count') }}</div>
+    <div class="kpi-label">إجمالي المعاملات</div>
+  </div>
 </div>
 
-<div class="row g-3 mb-4">
-  <div class="col-md-3">
-    <div class="stat-card">
-      <div class="stat-icon">🏢</div>
-      <div><div class="stat-value">{{ companies|length }}</div><div class="stat-label">إجمالي الشركات</div></div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="stat-card" style="border-color:var(--mint)">
-      <div class="stat-icon">✅</div>
-      <div><div class="stat-value" style="color:var(--mint)">{{ companies|selectattr('is_active')|list|length }}</div><div class="stat-label">نشطة</div></div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="stat-card" style="border-color:var(--sky)">
-      <div class="stat-icon">👥</div>
-      <div><div class="stat-value" style="color:var(--sky)">{{ companies|sum(attribute='user_count') }}</div><div class="stat-label">إجمالي المستخدمين</div></div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="stat-card" style="border-color:var(--gold)">
-      <div class="stat-icon">📋</div>
-      <div><div class="stat-value" style="color:var(--gold)">{{ companies|sum(attribute='corr_count') }}</div><div class="stat-label">إجمالي المعاملات</div></div>
-    </div>
-  </div>
+<!-- شريط الأدوات -->
+<div style="display:flex;gap:10px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
+  <a href="{{ url_for('new_company') }}" class="btn btn-electric">＋ شركة جديدة</a>
+  <form method="GET" style="display:flex;gap:8px;flex:1;min-width:200px">
+    <input name="q" class="form-control" value="{{ request.args.get('q','') }}"
+           placeholder="بحث عن شركة..." style="flex:1">
+    <select name="plan" class="form-control" style="width:auto" onchange="this.form.submit()">
+      <option value="">كل الخطط</option>
+      {% for k,p in plans.items() %}
+      <option value="{{ k }}" {% if request.args.get('plan')==k %}selected{% endif %}>{{ p.icon }} {{ p.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="status" class="form-control" style="width:auto" onchange="this.form.submit()">
+      <option value="">كل الحالات</option>
+      <option value="active"   {% if request.args.get('status')=='active'   %}selected{% endif %}>✅ نشطة</option>
+      <option value="inactive" {% if request.args.get('status')=='inactive' %}selected{% endif %}>⏸ موقوفة</option>
+      <option value="expired"  {% if request.args.get('status')=='expired'  %}selected{% endif %}>❌ منتهية</option>
+      <option value="expiring" {% if request.args.get('status')=='expiring' %}selected{% endif %}>⏰ تنتهي قريباً</option>
+    </select>
+    <button type="submit" class="btn btn-ghost">بحث</button>
+  </form>
 </div>
 
+<!-- جدول الشركات -->
 <div class="card">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
-    <h6 class="mb-0">قائمة الشركات</h6>
-    <button class="btn btn-outline btn-sm" onclick="checkSubscriptions()">🔔 فحص الاشتراكات</button>
-  </div>
   <div class="table-wrap">
     <table class="table">
-      <thead><tr>
-        <th>الشركة</th><th>الكود</th><th>المستخدمون</th>
-        <th>المعاملات</th><th>الباقة</th><th>انتهاء الاشتراك</th><th>الحالة</th><th>إجراءات</th>
-      </tr></thead>
+      <thead>
+        <tr>
+          <th>الشركة</th>
+          <th>الخطة</th>
+          <th>المستخدمون</th>
+          <th>المعاملات</th>
+          <th>الاشتراك</th>
+          <th>الحالة</th>
+          <th>إجراءات</th>
+        </tr>
+      </thead>
       <tbody>
-      {% for co in companies %}
-      {% set sub = {} %}
-      {% if co.settings_json %}{% set sub = co.settings_json | fromjson_sub %}{% endif %}
-      <tr>
+      {% for item in stats %}
+      {% set co = item.co %}
+      {% set sub = item.sub %}
+      {% set plan = sub.plan %}
+
+      <tr class="{% if sub.is_expired %}{% endif %}">
+
+        <!-- الشركة -->
         <td>
-          <div class="fw-600">{{ co.name }}</div>
-          <small class="text-muted">{{ co.email or '' }}</small>
+          <div style="display:flex;align-items:center;gap:10px">
+            {% if co.logo_path %}
+            <img src="/uploads/{{ co.logo_path }}" style="width:32px;height:32px;object-fit:contain;border-radius:6px;flex-shrink:0">
+            {% else %}
+            <div style="width:32px;height:32px;border-radius:6px;background:linear-gradient(135deg,var(--sky),var(--mint));display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:#000;flex-shrink:0">{{ co.name[0] }}</div>
+            {% endif %}
+            <div>
+              <div style="font-weight:800;font-size:14px">{{ co.name }}</div>
+              <div style="font-size:11px;color:var(--text3)">
+                <code style="color:var(--sky)">{{ co.code }}</code>
+                {% if co.email %} · {{ co.email }}{% endif %}
+              </div>
+            </div>
+          </div>
         </td>
-        <td><code style="color:var(--sky)">{{ co.code }}</code></td>
-        <td><span class="badge badge-normal">{{ co.user_count }} مستخدم</span></td>
-        <td><span class="badge badge-pending">{{ co.corr_count }} معاملة</span></td>
+
+        <!-- الخطة -->
         <td>
-          {% set plan = sub.plan if sub.plan is defined else '—' %}
-          {% if plan == 'starter' %}<span class="badge" style="background:rgba(0,180,216,.15);color:var(--sky)">Starter</span>
-          {% elif plan == 'business' %}<span class="badge" style="background:rgba(6,255,165,.15);color:var(--mint)">Business</span>
-          {% elif plan == 'enterprise' %}<span class="badge" style="background:rgba(255,214,0,.15);color:var(--gold)">Enterprise</span>
-          {% else %}<span class="text-muted">—</span>{% endif %}
+          <span class="badge" style="background:{{ plan.color }}22;color:{{ plan.color }};border:1px solid {{ plan.color }}44">
+            {{ plan.icon }} {{ plan.name }}
+          </span>
         </td>
+
+        <!-- المستخدمون -->
         <td>
-          {% set ed = sub.end_date if sub.end_date is defined else '' %}
-          {% if ed %}<span style="color:var(--warn)">📅 {{ ed }}</span>
-          {% else %}<span class="text-muted">—</span>{% endif %}
+          {% set ulimit = plan.limits.users %}
+          <span style="color:{% if ulimit != -1 and co.user_count >= ulimit %}var(--danger){% else %}var(--text){% endif %}">
+            {{ co.user_count }}{% if ulimit != -1 %}/{{ ulimit }}{% else %}/∞{% endif %}
+          </span>
         </td>
+
+        <!-- المعاملات -->
+        <td>{{ co.corr_count }}</td>
+
+        <!-- الاشتراك -->
         <td>
-          {% if co.is_active %}<span class="badge badge-normal">✓ نشطة</span>
-          {% else %}<span class="badge badge-draft">⏸ موقوفة</span>{% endif %}
+          {% if sub.end_date %}
+            {% if sub.is_expired %}
+              <span style="color:var(--danger);font-size:12px">❌ انتهى {{ sub.end_date[:10] }}</span>
+            {% elif sub.days_left <= 7 %}
+              <span style="color:var(--gold);font-size:12px">⚠️ {{ sub.days_left }} يوم</span>
+            {% else %}
+              <span style="font-size:12px;color:var(--text2)">📅 {{ sub.end_date[:10] }}</span>
+              <div style="font-size:10px;color:var(--text3)">{{ sub.days_left }} يوم متبقي</div>
+            {% endif %}
+          {% else %}
+            <span style="color:var(--text3);font-size:12px">—</span>
+          {% endif %}
         </td>
+
+        <!-- الحالة -->
+        <td>
+          {% if not co.is_active %}
+            <span class="badge" style="background:rgba(255,56,96,.15);color:var(--danger)">⏸ موقوفة</span>
+          {% elif sub.is_expired %}
+            <span class="badge" style="background:rgba(255,56,96,.15);color:var(--danger)">❌ منتهية</span>
+          {% else %}
+            <span class="badge badge-active">✅ نشطة</span>
+          {% endif %}
+        </td>
+
+        <!-- الإجراءات -->
         <td>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <!-- دخول للشركة -->
             {% if co.id != session.get('company_id') %}
             <form method="POST" action="{{ url_for('switch_company', company_id=co.id) }}" style="display:inline">
-              <button type="submit" class="btn btn-outline btn-sm">🔑 دخول</button>
+              <button type="submit" class="btn btn-outline btn-sm" title="الدخول كمدير">🔑</button>
             </form>
             {% else %}
-            <span class="badge badge-normal">الحالية</span>
+            <span class="badge badge-active" style="padding:4px 8px">👁️ أنت هنا</span>
             {% endif %}
 
+            <!-- تجديد الاشتراك -->
+            <button class="btn btn-ghost btn-sm" title="تجديد الاشتراك"
+                    onclick="openRenew('{{ co.id }}','{{ co.name }}','{{ sub.plan_key }}')">🔄</button>
+
+            <!-- تفعيل/إيقاف -->
             <form method="POST" action="{{ url_for('toggle_company', cid=co.id) }}" style="display:inline">
-              <button type="submit" class="btn btn-sm {{ 'btn-warn' if co.is_active else 'btn-electric' }}">
+              <button type="submit" class="btn {% if co.is_active %}btn-ghost{% else %}btn-electric{% endif %} btn-sm"
+                      title="{{ 'إيقاف' if co.is_active else 'تفعيل' }}"
+                      onclick="return confirm('{{ 'إيقاف' if co.is_active else 'تفعيل' }} شركة {{ co.name }}؟')">
                 {{ '⏸' if co.is_active else '▶️' }}
               </button>
             </form>
 
-            <button class="btn btn-sm btn-outline" title="الاشتراك"
-              onclick="openSub('{{ co.id }}','{{ co.name }}','{{ co.email or '' }}',
-              '{{ sub.plan if sub.plan is defined else 'starter' }}',
-              '{{ sub.end_date if sub.end_date is defined else '' }}',
-              '{{ sub.price if sub.price is defined else '' }}',
-              '{{ sub.max_users if sub.max_users is defined else 10 }}',
-              '{{ sub.notify_email if sub.notify_email is defined else (co.email or '') }}')">💳</button>
-
-            {% if co.id != session.get('company_id') %}
-            <button class="btn btn-sm btn-danger"
-              onclick="confirmAction('{{ url_for('delete_company', cid=co.id) }}','حذف شركة','سيتم حذف جميع بيانات شركة {{ co.name }} نهائياً!')">🗑</button>
-            {% endif %}
+            <!-- حذف -->
+            <form method="POST" action="{{ url_for('delete_company', cid=co.id) }}" style="display:inline">
+              <button type="submit" class="btn btn-danger btn-sm" title="حذف"
+                      onclick="return confirm('حذف شركة {{ co.name }} نهائياً؟ لا يمكن التراجع!')">🗑</button>
+            </form>
           </div>
         </td>
       </tr>
-      {% else %}
-      <tr><td colspan="8" class="text-center py-4 text-muted">لا توجد شركات بعد</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
 
-<!-- Modal الاشتراك -->
-<div class="modal-overlay" id="subModal">
-  <div class="modal" style="max-width:520px">
-    <div class="modal-title">💳 إعدادات الاشتراك — <span id="subName"></span></div>
-    <div class="modal-body">
-      <form id="subForm" method="POST">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">الباقة</label>
-            <select name="plan" id="subPlan" class="form-control">
-              <option value="starter">Starter — 499 ريال/شهر</option>
-              <option value="business">Business — 1,499 ريال/شهر</option>
-              <option value="enterprise">Enterprise — تفاوض</option>
-              <option value="government">حكومي — تفاوض</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">الحد الأقصى للمستخدمين</label>
-            <input type="number" name="max_users" id="subMaxUsers" class="form-control" value="10">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">تاريخ البداية</label>
-            <input type="date" name="start_date" id="subStartDate" class="form-control">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">تاريخ الانتهاء</label>
-            <input type="date" name="end_date" id="subEndDate" class="form-control">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">الرسوم (ريال/شهر)</label>
-            <input type="text" name="price" id="subPrice" class="form-control" placeholder="499">
-          </div>
-          <div>
-            <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">بريد التنبيه</label>
-            <input type="email" name="notify_email" id="subEmail" class="form-control">
-          </div>
-        </div>
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px;color:var(--text3);display:block;margin-bottom:4px">ملاحظات</label>
-          <textarea name="notes" class="form-control" rows="2" placeholder="ملاحظات..."></textarea>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">
-          <input type="checkbox" name="send_notification" value="1">
-          إرسال بريد إلكتروني للشركة بتفاصيل الاشتراك
-        </label>
-      </form>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="document.getElementById('subModal').classList.remove('show')">إلغاء</button>
-      <button class="btn btn-electric" onclick="document.getElementById('subForm').submit()">💾 حفظ</button>
-    </div>
+<!-- Modal: تجديد الاشتراك -->
+<div id="renewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--card);border:1px solid var(--border);border-radius:16px;padding:32px;min-width:380px;max-width:480px;width:90%">
+    <h3 style="margin-bottom:6px">🔄 تجديد / تغيير الاشتراك</h3>
+    <p id="renewCoName" style="font-size:13px;color:var(--text3);margin-bottom:20px"></p>
+    <form method="POST" action="{{ url_for('renew_subscription') }}">
+      <input type="hidden" name="company_id" id="renewCoId">
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label" style="font-size:12px;color:var(--text3);margin-bottom:6px;display:block">الخطة</label>
+        <select name="plan" id="renewPlan" class="form-control">
+          {% for k,p in plans.items() %}
+          <option value="{{ k }}">{{ p.icon }} {{ p.name }} — {{ p.price_sar }} ر.س</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label" style="font-size:12px;color:var(--text3);margin-bottom:6px;display:block">مدة الاشتراك</label>
+        <select name="duration_days" class="form-control">
+          <option value="30">شهر واحد (30 يوم)</option>
+          <option value="90">3 أشهر (90 يوم)</option>
+          <option value="180">6 أشهر (180 يوم)</option>
+          <option value="365">سنة كاملة (365 يوم)</option>
+          <option value="14">تجربة 14 يوم</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:20px">
+        <label class="form-label" style="font-size:12px;color:var(--text3);margin-bottom:6px;display:block">ملاحظات</label>
+        <input name="notes" class="form-control" placeholder="مثال: دفع نقدي - فاتورة رقم 001">
+      </div>
+      <div style="display:flex;gap:10px">
+        <button type="submit" class="btn btn-electric" style="flex:1">✅ تفعيل الاشتراك</button>
+        <button type="button" class="btn btn-ghost" onclick="closeRenew()">إلغاء</button>
+      </div>
+    </form>
   </div>
 </div>
 
-<!-- Modal التنبيهات -->
-<div class="modal-overlay" id="warnModal">
-  <div class="modal" style="max-width:500px">
-    <div class="modal-title">🔔 تنبيهات الاشتراكات</div>
-    <div class="modal-body" id="warnBody"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="document.getElementById('warnModal').classList.remove('show')">إغلاق</button>
-    </div>
-  </div>
-</div>
+{% endblock %}
 
+{% block scripts %}
 <script>
-function openSub(id,name,email,plan,endDate,price,maxUsers,notifyEmail){
-  document.getElementById('subName').textContent=name;
-  document.getElementById('subForm').action='/super-admin/company/'+id+'/subscription';
-  document.getElementById('subPlan').value=plan||'starter';
-  document.getElementById('subEndDate').value=endDate||'';
-  document.getElementById('subPrice').value=price||'';
-  document.getElementById('subMaxUsers').value=maxUsers||10;
-  document.getElementById('subEmail').value=notifyEmail||email||'';
-  const today=new Date().toISOString().split('T')[0];
-  document.getElementById('subStartDate').value=today;
-  document.getElementById('subModal').classList.add('show');
+function openRenew(id, name, plan){
+  document.getElementById('renewCoId').value = id;
+  document.getElementById('renewCoName').textContent = 'الشركة: ' + name;
+  document.getElementById('renewPlan').value = plan;
+  const m = document.getElementById('renewModal');
+  m.style.display = 'flex';
 }
-async function checkSubscriptions(){
-  const r=await fetch('/super-admin/check-subscriptions');
-  const data=await r.json();
-  const body=document.getElementById('warnBody');
-  if(data.count===0){
-    body.innerHTML='<div style="text-align:center;color:var(--mint);padding:20px">✅ جميع الاشتراكات سارية المفعول</div>';
-  } else {
-    body.innerHTML=data.warnings.map(w=>`
-      <div style="background:rgba(255,107,53,.1);border:1px solid var(--danger);border-radius:8px;padding:12px;margin-bottom:8px">
-        <div style="font-weight:700;color:var(--danger)">⚠️ ${w.company}</div>
-        <div style="font-size:13px;color:var(--text2)">ينتهي: ${w.end_date} — 
-          ${w.days_left<=0?'<span style="color:var(--danger)">منتهي!</span>':
-            '<span style="color:var(--warn)">باقي '+w.days_left+' يوم</span>'}
-        </div>
-      </div>`).join('');
-  }
-  document.getElementById('warnModal').classList.add('show');
+function closeRenew(){
+  document.getElementById('renewModal').style.display = 'none';
 }
+document.getElementById('renewModal').addEventListener('click', function(e){
+  if(e.target === this) closeRenew();
+});
 </script>
 {% endblock %}

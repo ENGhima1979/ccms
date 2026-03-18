@@ -63,6 +63,22 @@ CREATE TABLE IF NOT EXISTS companies (
     settings_json TEXT DEFAULT '{}'
 );
 
+
+-- -----------------------------------------
+--  سجل الفواتير والاشتراكات
+-- -----------------------------------------
+CREATE TABLE IF NOT EXISTS billing_log (
+    id           TEXT PRIMARY KEY,
+    company_id   TEXT NOT NULL REFERENCES companies(id),
+    plan         TEXT NOT NULL,
+    amount_sar   REAL DEFAULT 0,
+    start_date   TEXT,
+    end_date     TEXT,
+    status       TEXT DEFAULT 'active',
+    notes        TEXT,
+    created_at   TEXT NOT NULL
+);
+
 -- -----------------------------------------
 --  أقسام / إدارات
 -- -----------------------------------------

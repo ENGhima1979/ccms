@@ -58,6 +58,17 @@ except ImportError:
     def get_all_integrations(*a,**k): return []
     def get_integration_logs(*a,**k): return []
     def get_integration_config(*a,**k): return {}
+try:
+    from saas_engine import (PLANS, get_company_subscription, check_limit,
+                              activate_subscription, get_usage_stats, get_all_companies_stats)
+except ImportError:
+    PLANS = {}
+    def get_company_subscription(c): return {'plan_key':'business','plan':{'name':'Business','limits':{'users':-1,'correspondences':-1,'projects':-1},'color':'#06FFA5','icon':'💼','price_sar':799,'features':[]},'is_active':True,'is_expired':False,'days_left':None,'end_date':'','notes':'','activated_at':'','auto_renew':False}
+    def check_limit(c,r): return True,0,-1,''
+    def activate_subscription(c,p,d=None,n=''): return True,'OK'
+    def get_usage_stats(c): return {}
+    def get_all_companies_stats(): return []
+
 from notifier import (get_company_notification_settings, notify_new_correspondence,
                       notify_due_soon, build_email_html, notify)
 from helpers import (get_user_project_ids, get_visible_projects,
@@ -70,6 +81,27 @@ from helpers import (get_user_project_ids, get_visible_projects,
 app = Flask(__name__, template_folder='templates', static_folder='static')
 import os as _os
 app.secret_key = _os.environ.get('SECRET_KEY', 'ccms-professional-2025-ibrahim-secure')
+
+
+def subscription_required(f):
+    """تحقق من صحة الاشتراك قبل كل طلب (عدا super_admin و landing و register)"""
+    @wraps(f)
+    def decorated(*a, **k):
+        if 'user_id' not in session:
+            return f(*a, **k)
+        if session.get('role') == 'super_admin':
+            return f(*a, **k)
+        cid = session.get('company_id')
+        if cid:
+            try:
+                sub = get_company_subscription(cid)
+                if sub and sub.get('is_expired') and not sub.get('is_active'):
+                    flash('⚠️ انتهى اشتراك شركتك. تواصل مع الإدارة لتجديد الاشتراك.', 'warning')
+                    return redirect(url_for('subscription_expired'))
+            except Exception:
+                pass
+        return f(*a, **k)
+    return decorated
 app.register_blueprint(api_blueprint)
 init_i18n(app)
 UPLOAD_FOLDER  = os.path.join(os.path.dirname(__file__), 'instance', 'uploads')
@@ -152,6 +184,7 @@ def inject_globals():
         'pending_wf': get_pending_workflow_count(),
         'company':    dict(co) if co else {},
         'today':      __import__('datetime').date.today,
+        'current_sub': get_company_subscription(session.get('company_id','')) if session.get('company_id') else None,
     }
 
 # -- Template filters ----------------------------------
@@ -293,6 +326,13 @@ def logout():
     resp.set_cookie('session', '', expires=0)
     flash('تم تسجيل الخروج بنجاح', 'success')
     return resp
+
+
+@app.route('/subscription-expired')
+@login_required
+def subscription_expired():
+    sub = get_company_subscription(session.get('company_id',''))
+    return render_template('subscription_expired.html', sub=sub, plans=PLANS)
 
 
 # ======================================================
@@ -3032,29 +3072,124 @@ def generate_api_key():
     return redirect(url_for('api_docs'))
 
 # --- Multi-tenant Admin -------------------------------
+# ══════════════════════════════════════════════════════════
+#  LANDING PAGE & REGISTRATION
+# ══════════════════════════════════════════════════════════
+@app.route('/landing')
+def landing():
+    return render_template('landing.html', plans=PLANS)
+
+@app.route('/register', methods=['GET','POST'])
+def register():
+    selected_plan = request.args.get('plan','trial')
+    if request.method == 'POST':
+        company_name = request.form.get('company_name','').strip()
+        company_code = request.form.get('company_code','').strip().upper()
+        admin_name   = request.form.get('admin_name','').strip()
+        admin_user   = request.form.get('admin_username','').strip().lower()
+        admin_pass   = request.form.get('admin_password','')
+        plan_key     = request.form.get('plan','trial')
+
+        if not all([company_name, company_code, admin_name, admin_user, admin_pass]):
+            flash('يرجى تعبئة جميع الحقول المطلوبة', 'error')
+            return render_template('register.html', plans=PLANS, form=request.form, selected_plan=plan_key)
+
+        conn = get_db()
+        # Check code uniqueness
+        if conn.execute("SELECT 1 FROM companies WHERE code=?", (company_code,)).fetchone():
+            flash(f'كود الشركة "{company_code}" مستخدم مسبقاً', 'error')
+            conn.close()
+            return render_template('register.html', plans=PLANS, form=request.form, selected_plan=plan_key)
+        if conn.execute("SELECT 1 FROM users WHERE username=?", (admin_user,)).fetchone():
+            flash(f'اسم المستخدم "{admin_user}" مستخدم مسبقاً', 'error')
+            conn.close()
+            return render_template('register.html', plans=PLANS, form=request.form, selected_plan=plan_key)
+
+        cid = new_id()
+        conn.execute("""INSERT INTO companies
+            (id,name,code,email,phone,city,country,is_active,subscription_plan,created_at)
+            VALUES (?,?,?,?,?,?,?,1,?,?)""",
+            (cid, company_name, company_code,
+             request.form.get('company_email',''),
+             request.form.get('phone',''),
+             request.form.get('city',''),
+             'المملكة العربية السعودية',
+             plan_key, now()))
+
+        uid = new_id()
+        conn.execute("""INSERT INTO users
+            (id,company_id,username,password_hash,full_name,role,is_active,all_projects,created_at)
+            VALUES (?,?,?,?,?,?,1,1,?)""",
+            (uid, cid, admin_user,
+             generate_password_hash(admin_pass),
+             admin_name, 'admin', now()))
+
+        conn.execute("INSERT INTO departments (id,company_id,name,code,is_active,created_at) VALUES (?,?,?,?,1,?)",
+                     (new_id(), cid, 'الإدارة العامة', 'MGMT', now()))
+
+        conn.commit()
+        conn.close()
+
+        # تفعيل اشتراك تجريبي
+        activate_subscription(cid, plan_key if plan_key != 'trial' else 'trial',
+                              duration_days=14 if plan_key == 'trial' else PLANS.get(plan_key,{}).get('duration_days',30),
+                              notes='تسجيل جديد')
+
+        flash(f'✅ مرحباً! تم إنشاء حساب "{company_name}" بنجاح. يمكنك تسجيل الدخول الآن.', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('register.html', plans=PLANS, form={}, selected_plan=selected_plan)
+
+
+# ══════════════════════════════════════════════════════════
+#  SUPER ADMIN — SaaS Dashboard
+# ══════════════════════════════════════════════════════════
 @app.route('/super-admin')
 @super_admin_required
 def super_admin():
-    # Only super admin (first user ever created, id=1 or role=super_admin)
-    conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE id=?", (session['user_id'],)).fetchone()
-    if not user or user['role'] not in ('super_admin', 'admin'):
-        conn.close()
-        flash('غير مصرح لك بالوصول', 'error')
-        return redirect(url_for('dashboard'))
-    
-    companies = conn.execute("""
-        SELECT c.*,
-               (SELECT COUNT(*) FROM users WHERE company_id=c.id AND is_active=1) as user_count,
-               (SELECT COUNT(*) FROM correspondence WHERE company_id=c.id AND is_deleted=0) as corr_count,
-               (SELECT COUNT(*) FROM projects WHERE company_id=c.id AND is_active=1) as proj_count
-        FROM companies c ORDER BY c.created_at DESC
-    """).fetchall()
-    conn.close()
-    return render_template('super_admin.html', companies=companies)
+    all_stats = get_all_companies_stats()
+
+    # فلترة من Python (Jinja لا يدعم continue)
+    q          = request.args.get('q','').lower()
+    plan_filter= request.args.get('plan','')
+    status_f   = request.args.get('status','')
+
+    stats = []
+    for item in all_stats:
+        co  = item['co']
+        sub = item['sub']
+        # فلتر النص
+        if q and q not in co['name'].lower() and q not in co['code'].lower():
+            continue
+        # فلتر الخطة
+        if plan_filter and sub['plan_key'] != plan_filter:
+            continue
+        # فلتر الحالة
+        if status_f == 'active'   and not co['is_active']: continue
+        if status_f == 'inactive' and co['is_active']:      continue
+        if status_f == 'expired'  and not sub['is_expired']:continue
+        if status_f == 'expiring':
+            dl = sub.get('days_left')
+            if dl is None or dl > 7 or dl < 0: continue
+        stats.append(item)
+
+    return render_template('super_admin.html', stats=stats, plans=PLANS,
+                           total_stats=all_stats)
+
+
+@app.route('/super-admin/subscription/renew', methods=['POST'])
+@super_admin_required
+def renew_subscription():
+    company_id   = request.form.get('company_id','')
+    plan_key     = request.form.get('plan','trial')
+    duration_days= int(request.form.get('duration_days', 30))
+    notes        = request.form.get('notes','').strip()
+    ok, msg = activate_subscription(company_id, plan_key, duration_days, notes)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('super_admin'))
 
 @app.route('/super-admin/company/new', methods=['GET','POST'])
-@admin_required
+@super_admin_required
 def new_company():
     if request.method == 'POST':
         conn = get_db()
@@ -3102,7 +3237,7 @@ def new_company():
     return render_template('company_form.html')
 
 @app.route('/super-admin/switch/<company_id>', methods=['POST'])
-@admin_required
+@super_admin_required
 def switch_company(company_id):
     """Super admin switches to manage another company"""
     conn = get_db()
@@ -3115,7 +3250,7 @@ def switch_company(company_id):
     return redirect(url_for('dashboard'))
 
 @app.route('/super-admin/company/<cid>/toggle', methods=['POST'])
-@admin_required
+@super_admin_required
 def toggle_company(cid):
     """تفعيل/إيقاف شركة"""
     conn = get_db()
@@ -3130,7 +3265,7 @@ def toggle_company(cid):
     return redirect(url_for('super_admin'))
 
 @app.route('/super-admin/company/<cid>/delete', methods=['POST'])
-@admin_required
+@super_admin_required
 def delete_company(cid):
     """حذف شركة نهائياً"""
     conn = get_db()
@@ -3149,7 +3284,7 @@ def delete_company(cid):
     return redirect(url_for('super_admin'))
 
 @app.route('/super-admin/company/<cid>/subscription', methods=['POST'])
-@admin_required
+@super_admin_required
 def update_subscription(cid):
     """تحديث بيانات الاشتراك"""
     conn = get_db()

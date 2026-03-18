@@ -464,6 +464,25 @@ textarea.form-control{min-height:120px;resize:vertical}
     {# القائمة الجانبية — الشاشات حسب دور المستخدم فقط  #}
     {# ══════════════════════════════════════════════════ #}
 
+    {# ── مؤشر الاشتراك (للمدير) ── #}
+    {% if is_admin and current_sub %}
+    {% set sub = current_sub %}
+    <div style="margin:8px 10px;padding:10px 12px;border-radius:9px;
+                background:{% if sub.is_expired %}rgba(255,56,96,.12){% elif sub.days_left is not none and sub.days_left<=7 %}rgba(255,193,7,.1){% else %}rgba(6,255,165,.07){% endif %};
+                border:1px solid {% if sub.is_expired %}rgba(255,56,96,.3){% elif sub.days_left is not none and sub.days_left<=7 %}rgba(255,193,7,.3){% else %}rgba(6,255,165,.2){% endif %}">
+      <div style="font-size:11px;font-weight:800;
+                  color:{% if sub.is_expired %}var(--danger){% elif sub.days_left is not none and sub.days_left<=7 %}var(--gold){% else %}var(--mint){% endif %}">
+        {{ sub.plan.icon }} {{ sub.plan.name }}
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">
+        {% if sub.is_expired %}❌ انتهى الاشتراك
+        {% elif sub.days_left is not none and sub.days_left <= 7 %}⚠️ {{ sub.days_left }} يوم متبقي
+        {% elif sub.days_left is not none %}📅 {{ sub.days_left }} يوم متبقي
+        {% else %}✅ اشتراك نشط{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     {# ── الرئيسية (الكل) ── #}
     <div class="sb-section">الرئيسية</div>
     <a href="{{ url_for('dashboard') }}" class="sb-link {% if request.endpoint=='dashboard' %}active{% endif %}">
