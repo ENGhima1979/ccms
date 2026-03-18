@@ -180,12 +180,12 @@
             <div class="row g-3">
               <div class="col-md-6">
                 <label class="form-label">رقم هاتف للاختبار</label>
-                <input type="text" name="test_phone" class="form-control" placeholder="+966512345678">
+                <input type="text" name="test_phone_callmebot" id="test_phone_callmebot" class="form-control" placeholder="+966512345678" dir="ltr">
               </div>
               <div class="col-md-6">
                 <label class="form-label">مفتاح CallMeBot للاختبار</label>
                 <input type="text" name="test_callmebot_key" class="form-control"
-                       value="{{ s.whatsapp_callmebot_key if s else '' }}" placeholder="1234567">
+                       value="{{ s.whatsapp_callmebot_key if s else '' }}" placeholder="1234567" dir="ltr">
               </div>
             </div>
             <button type="submit" name="action" value="test_whatsapp" class="btn btn-success mt-3">
@@ -219,7 +219,7 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label">رقم الاختبار</label>
-                <input type="text" name="test_phone" class="form-control" placeholder="+966512345678" dir="ltr">
+                <input type="text" name="test_phone_ultramsg" id="test_phone_ultramsg" class="form-control" placeholder="+966512345678" dir="ltr">
               </div>
             </div>
             <button type="submit" name="action" value="test_whatsapp" class="btn btn-warning mt-3">
@@ -250,7 +250,7 @@
               </div>
               <div class="col-md-6">
                 <label class="form-label">رقم للاختبار</label>
-                <input type="text" name="test_phone" class="form-control" placeholder="+966512345678">
+                <input type="text" name="test_phone_business" id="test_phone_business" class="form-control" placeholder="+966512345678" dir="ltr">
               </div>
             </div>
             <button type="submit" name="action" value="test_whatsapp" class="btn btn-success mt-3">
