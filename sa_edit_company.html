@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}تعديل {{ co.name }}{% endblock %}
+{% block page_title %}✏️ تعديل بيانات الشركة{% endblock %}
+{% block page_sub %}{{ co.name }}{% endblock %}
+{% block header_actions %}
+  <a href="{{ url_for('sa_company_detail', cid=co.id) }}" class="btn btn-ghost btn-sm">← رجوع</a>
+{% endblock %}
+{% block content %}
+<div style="max-width:600px">
+  <div class="card">
+    <div class="card-body">
+      <form method="POST">
+        <div class="form-grid">
+          <div class="form-group form-full">
+            <label class="form-label">اسم الشركة <span style="color:var(--danger)">*</span></label>
+            <input name="name" class="form-control" value="{{ co.name }}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">الاسم بالإنجليزية</label>
+            <input name="name_en" class="form-control" value="{{ co.name_en or '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">الكود</label>
+            <input name="code" class="form-control" value="{{ co.code }}" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">البريد الإلكتروني</label>
+            <input type="email" name="email" class="form-control" value="{{ co.email or '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">الهاتف</label>
+            <input name="phone" class="form-control" value="{{ co.phone or '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">المدينة</label>
+            <input name="city" class="form-control" value="{{ co.city or '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">رقم السجل التجاري</label>
+            <input name="cr_number" class="form-control" value="{{ co.cr_number or '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">اللون الرئيسي</label>
+            <input type="color" name="primary_color" class="form-control" value="{{ co.primary_color or '#00b4d8' }}" style="height:42px;padding:4px">
+          </div>
+          <div class="form-group form-full">
+            <label class="form-label">العنوان</label>
+            <input name="address" class="form-control" value="{{ co.address or '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">الحالة</label>
+            <label class="form-check" style="margin-top:10px">
+              <input type="checkbox" name="is_active" value="1" {% if co.is_active %}checked{% endif %} style="width:16px;height:16px;accent-color:var(--mint)">
+              <span>الشركة نشطة</span>
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <button type="submit" class="btn btn-electric">💾 حفظ التعديلات</button>
+          <a href="{{ url_for('sa_company_detail', cid=co.id) }}" class="btn btn-ghost">إلغاء</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

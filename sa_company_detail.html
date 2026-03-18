@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+{% block title %}{{ co.name }}{% endblock %}
+{% block page_title %}🏢 {{ co.name }}{% endblock %}
+{% block page_sub %}تفاصيل الشركة وإدارة الاشتراك{% endblock %}
+{% block header_actions %}
+  <a href="{{ url_for('sa_edit_company', cid=co.id) }}" class="btn btn-warn btn-sm">✏️ تعديل</a>
+  <form method="POST" action="{{ url_for('switch_company', company_id=co.id) }}" style="display:inline">
+    <button class="btn btn-outline btn-sm">🔑 دخول للشركة</button>
+  </form>
+  <a href="{{ url_for('super_admin') }}" class="btn btn-ghost btn-sm">← رجوع</a>
+{% endblock %}
+{% block content %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+
+  <!-- بيانات الشركة -->
+  <div class="card">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+      <h6 class="mb-0">🏢 بيانات الشركة</h6>
+      <a href="{{ url_for('sa_edit_company', cid=co.id) }}" class="btn btn-ghost btn-sm">✏️</a>
+    </div>
+    <div class="card-body">
+      {% for label, val in [
+        ('الاسم', co.name), ('الكود', co.code),
+        ('البريد', co.email or '—'), ('الهاتف', co.phone or '—'),
+        ('المدينة', co.city or '—'), ('السجل التجاري', co.cr_number or '—'),
+        ('تاريخ الإنشاء', co.created_at[:10] if co.created_at else '—')
+      ] %}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--text3)">{{ label }}</span>
+        <span style="font-size:13px;font-weight:700">{{ val }}</span>
+      </div>
+      {% endfor %}
+      <div style="display:flex;justify-content:space-between;padding:8px 0">
+        <span style="font-size:12px;color:var(--text3)">الحالة</span>
+        <span class="badge {% if co.is_active %}badge-active{% else %}badge-draft{% endif %}">
+          {{ '✅ نشطة' if co.is_active else '⏸ موقوفة' }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- الاشتراك -->
+  <div class="card">
+    <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+      <h6 class="mb-0">💳 الاشتراك الحالي</h6>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('renewModal').style.display='flex'">🔄 تجديد</button>
+    </div>
+    <div class="card-body">
+      {% if sub %}
+      {% set plan = sub.plan %}
+      <div style="text-align:center;padding:16px;background:{{ plan.color }}11;border:1px solid {{ plan.color }}33;border-radius:var(--r);margin-bottom:16px">
+        <div style="font-size:32px">{{ plan.icon }}</div>
+        <div style="font-size:20px;font-weight:900;color:{{ plan.color }}">{{ plan.name }}</div>
+        <div style="font-size:13px;color:var(--text3);margin-top:4px">{{ plan.price_sar }} ر.س/شهر</div>
+      </div>
+      {% for label, val, color in [
+        ('حالة الاشتراك', '❌ منتهي' if sub.is_expired else '✅ نشط', 'var(--danger)' if sub.is_expired else 'var(--mint)'),
+        ('تاريخ الانتهاء', sub.end_date[:10] if sub.end_date else '—', 'var(--text2)'),
+        ('الأيام المتبقية', (sub.days_left|string + ' يوم') if sub.days_left is not none else '—', 'var(--gold)' if sub.days_left and sub.days_left <= 7 else 'var(--text2)'),
+      ] %}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:12px;color:var(--text3)">{{ label }}</span>
+        <span style="font-size:13px;font-weight:700;color:{{ color }}">{{ val }}</span>
+      </div>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- إحصائيات -->
+<div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:20px">
+  <div class="kpi" style="--kpi-color:var(--sky)"><div class="kpi-icon">📋</div><div class="kpi-val">{{ stats.total_corr }}</div><div class="kpi-label">إجمالي المعاملات</div></div>
+  <div class="kpi" style="--kpi-color:var(--mint)"><div class="kpi-icon">📅</div><div class="kpi-val">{{ stats.month_corr }}</div><div class="kpi-label">هذا الشهر</div></div>
+  <div class="kpi" style="--kpi-color:var(--gold)"><div class="kpi-icon">👥</div><div class="kpi-val">{{ stats.total_users }}</div><div class="kpi-label">المستخدمون</div></div>
+  <div class="kpi" style="--kpi-color:#8b5cf6"><div class="kpi-icon">🏗️</div><div class="kpi-val">{{ stats.total_proj }}</div><div class="kpi-label">المشاريع</div></div>
+  <div class="kpi" style="--kpi-color:var(--danger)"><div class="kpi-icon">⏳</div><div class="kpi-val">{{ stats.wf_pending }}</div><div class="kpi-label">مهام معلقة</div></div>
+</div>
+
+<!-- المستخدمون -->
+<div class="card mb-4">
+  <div class="card-header"><h6 class="mb-0">👥 المستخدمون ({{ users|length }})</h6></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>الاسم</th><th>اسم الدخول</th><th>الدور</th><th>آخر دخول</th><th>الحالة</th></tr></thead>
+      <tbody>
+      {% for u in users %}
+      <tr>
+        <td style="font-weight:700">{{ u.full_name }}</td>
+        <td><code style="color:var(--sky)">{{ u.username }}</code></td>
+        <td>
+          {% set role_labels = {'super_admin':'👑 مالك','admin':'🔑 مدير','director':'🎯 مدير مشاريع','branch_manager':'🏢 مدير فرع','manager':'📋 مشرف','user':'👤 مستخدم'} %}
+          {{ role_labels.get(u.role, u.role) }}
+        </td>
+        <td style="font-size:12px;color:var(--text3)">{{ u.last_login[:10] if u.last_login else '—' }}</td>
+        <td><span class="badge {% if u.is_active %}badge-active{% else %}badge-draft{% endif %}">{{ '✅' if u.is_active else '⏸' }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- سجل الفواتير -->
+{% if billing %}
+<div class="card">
+  <div class="card-header"><h6 class="mb-0">💰 سجل الفواتير</h6></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>الخطة</th><th>المبلغ</th><th>البداية</th><th>الانتهاء</th><th>ملاحظات</th></tr></thead>
+      <tbody>
+      {% for b in billing %}
+      <tr>
+        <td>{{ plans.get(b.plan, {'name':b.plan,'icon':'📦'}).icon }} {{ plans.get(b.plan, {'name':b.plan}).name }}</td>
+        <td style="font-weight:900;color:var(--mint)">{{ b.amount_sar|int }} ر.س</td>
+        <td style="font-size:12px;color:var(--text3)">{{ b.start_date or '—' }}</td>
+        <td style="font-size:12px;color:var(--text3)">{{ b.end_date or '—' }}</td>
+        <td style="font-size:12px;color:var(--text3)">{{ b.notes or '—' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Modal تجديد -->
+<div id="renewModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:28px;width:min(420px,95%)">
+    <h3 style="margin-bottom:16px">🔄 تجديد اشتراك {{ co.name }}</h3>
+    <form method="POST" action="{{ url_for('renew_subscription') }}">
+      <input type="hidden" name="company_id" value="{{ co.id }}">
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label" style="font-size:12px;color:var(--text3);margin-bottom:5px;display:block">الخطة</label>
+        <select name="plan" class="form-control">{% for k,p in plans.items() %}<option value="{{ k }}" {% if sub and sub.plan_key==k %}selected{% endif %}>{{ p.icon }} {{ p.name }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label class="form-label" style="font-size:12px;color:var(--text3);margin-bottom:5px;display:block">المدة</label>
+        <select name="duration_days" class="form-control"><option value="30">شهر</option><option value="90">3 أشهر</option><option value="180">6 أشهر</option><option value="365">سنة</option></select>
+      </div>
+      <div class="form-group" style="margin-bottom:16px">
+        <label class="form-label" style="font-size:12px;color:var(--text3);margin-bottom:5px;display:block">ملاحظة</label>
+        <input name="notes" class="form-control" placeholder="فاتورة رقم ...">
+      </div>
+      <div style="display:flex;gap:8px">
+        <button type="submit" class="btn btn-electric" style="flex:1">✅ تفعيل</button>
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('renewModal').style.display='none'">إلغاء</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

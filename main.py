@@ -2542,6 +2542,111 @@ def _extract_snippet(text, query, window=150):
     return snippet
 
 
+
+# ══════════════════════════════════════════════════════════
+#  صفحة اختبار OCR التفاعلية
+# ══════════════════════════════════════════════════════════
+@app.route('/ocr/test-page')
+@login_required
+def ocr_test_page():
+    """صفحة اختبار OCR مع حالة الإعداد"""
+    import os
+
+    # جلب api_key
+    conn   = get_db()
+    co_row = conn.execute("SELECT settings_json FROM companies WHERE id=?",
+                          (session['company_id'],)).fetchone()
+    api_key = ""
+    if co_row and co_row['settings_json']:
+        try: api_key = json.loads(co_row['settings_json']).get('ai_api_key','')
+        except: pass
+    if not api_key:
+        api_key = os.environ.get('ANTHROPIC_API_KEY','')
+    conn.close()
+
+    # فحص حالة كل مكوّن
+    status = {}
+    status['claude_api'] = bool(api_key)
+
+    try:
+        import pytesseract
+        langs = pytesseract.get_languages()
+        status['tesseract']     = True
+        status['tesseract_ara'] = 'ara' in langs
+    except Exception:
+        status['tesseract']     = False
+        status['tesseract_ara'] = False
+
+    try:
+        import cv2
+        status['opencv'] = True
+    except Exception:
+        status['opencv'] = False
+
+    try:
+        from pdf2image import convert_from_bytes
+        status['pdf2image'] = True
+    except Exception:
+        status['pdf2image'] = False
+
+    return render_template('ocr_test.html', status=status)
+
+
+@app.route('/ocr/test', methods=['POST'])
+@login_required
+def ocr_test_run():
+    """تشغيل OCR على ملف مرفوع مباشرة"""
+    import tempfile, os
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'لم يُرفع ملف'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'اسم الملف فارغ'}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in {'.png','.jpg','.jpeg','.pdf','.tiff','.tif','.bmp','.webp'}:
+        return jsonify({'error': 'نوع الملف غير مدعوم'}), 400
+
+    # جلب API Key
+    conn   = get_db()
+    co_row = conn.execute("SELECT settings_json FROM companies WHERE id=?",
+                          (session['company_id'],)).fetchone()
+    conn.close()
+    api_key = ""
+    if co_row and co_row['settings_json']:
+        try: api_key = json.loads(co_row['settings_json']).get('ai_api_key','')
+        except: pass
+    if not api_key:
+        api_key = os.environ.get('ANTHROPIC_API_KEY','')
+
+    # المحرك المطلوب
+    engine_pref = request.form.get('engine','auto')
+    if engine_pref == 'claude' and not api_key:
+        return jsonify({'error': 'Claude API Key غير مضبوط'}), 400
+
+    # حفظ الملف مؤقتاً
+    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+        file.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        key = api_key if engine_pref != 'tesseract' else ''
+        result = extract_text_from_file(tmp_path, api_key=key)
+        return jsonify({
+            'text':       result.get('text',''),
+            'confidence': result.get('confidence', 0),
+            'engine':     result.get('engine','none'),
+            'pages':      result.get('pages', 1),
+            'word_count': result.get('word_count', 0),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        try: os.unlink(tmp_path)
+        except: pass
+
 # ======================================================
 #  REPORT BUILDER -- منشئ التقارير المخصصة
 # ======================================================
@@ -3569,6 +3674,311 @@ def _send_subscription_email(co, sub):
             s.login(smtp_user, smtp_pass)
             s.send_message(msg)
 
+
+
+
+# ══════════════════════════════════════════════════════════
+#  SUPER ADMIN — الصفحات الإضافية
+# ══════════════════════════════════════════════════════════
+
+@app.route('/super-admin/analytics')
+@super_admin_required
+def sa_analytics():
+    """تحليلات ونمو النظام"""
+    conn = get_db()
+    import datetime
+
+    # نمو الشركات شهرياً (آخر 12 شهر)
+    months = []
+    for i in range(11, -1, -1):
+        d = datetime.date.today().replace(day=1) - datetime.timedelta(days=i*28)
+        months.append(d.strftime('%Y-%m'))
+
+    company_growth = []
+    for m in months:
+        cnt = conn.execute(
+            "SELECT COUNT(*) as c FROM companies WHERE substr(created_at,1,7)<=?", (m,)
+        ).fetchone()['c']
+        company_growth.append(cnt)
+
+    # نمو المراسلات شهرياً
+    corr_growth = []
+    for m in months:
+        cnt = conn.execute(
+            "SELECT COUNT(*) as c FROM correspondence WHERE substr(date,1,7)=?", (m,)
+        ).fetchone()['c']
+        corr_growth.append(cnt)
+
+    # توزيع الخطط
+    plan_dist = {}
+    companies = conn.execute("SELECT settings_json, subscription_plan FROM companies WHERE is_active=1").fetchall()
+    for co in companies:
+        plan = 'trial'
+        if co['settings_json']:
+            try:
+                s = json.loads(co['settings_json'])
+                plan = s.get('subscription', {}).get('plan', co['subscription_plan'] or 'trial')
+            except: pass
+        else:
+            plan = co['subscription_plan'] or 'trial'
+        plan_dist[plan] = plan_dist.get(plan, 0) + 1
+
+    # أكثر الشركات نشاطاً
+    top_companies = conn.execute("""
+        SELECT c.name, c.code,
+               COUNT(corr.id) as corr_count,
+               COUNT(DISTINCT u.id) as user_count
+        FROM companies c
+        LEFT JOIN correspondence corr ON corr.company_id=c.id AND corr.is_deleted=0
+        LEFT JOIN users u ON u.company_id=c.id AND u.is_active=1
+        WHERE c.is_active=1
+        GROUP BY c.id ORDER BY corr_count DESC LIMIT 10
+    """).fetchall()
+
+    # إجمالي النظام
+    totals = {
+        'companies':     conn.execute("SELECT COUNT(*) as c FROM companies").fetchone()['c'],
+        'active_co':     conn.execute("SELECT COUNT(*) as c FROM companies WHERE is_active=1").fetchone()['c'],
+        'users':         conn.execute("SELECT COUNT(*) as c FROM users WHERE is_active=1").fetchone()['c'],
+        'correspondence': conn.execute("SELECT COUNT(*) as c FROM correspondence WHERE is_deleted=0").fetchone()['c'],
+        'this_month':    conn.execute(
+            "SELECT COUNT(*) as c FROM correspondence WHERE substr(date,1,7)=?",
+            (datetime.date.today().strftime('%Y-%m'),)).fetchone()['c'],
+        'ocr_docs':      0,
+    }
+    try:
+        totals['ocr_docs'] = conn.execute(
+            "SELECT COUNT(*) as c FROM ocr_results WHERE status='done'").fetchone()['c']
+    except: pass
+
+    conn.close()
+    return render_template('sa_analytics.html',
+        months=[m[5:] for m in months],
+        company_growth=company_growth,
+        corr_growth=corr_growth,
+        plan_dist=plan_dist,
+        top_companies=[dict(r) for r in top_companies],
+        totals=totals, plans=PLANS)
+
+
+@app.route('/super-admin/billing')
+@super_admin_required
+def sa_billing():
+    """سجل الفواتير والمدفوعات"""
+    conn = get_db()
+    page = int(request.args.get('page', 1))
+    per  = 20
+    q    = request.args.get('q', '').strip()
+
+    base_sql = """SELECT b.*, c.name as co_name, c.code as co_code
+                  FROM billing_log b
+                  LEFT JOIN companies c ON b.company_id=c.id"""
+    params = []
+    if q:
+        base_sql += " WHERE c.name LIKE ? OR c.code LIKE ?"
+        params = [f'%{q}%', f'%{q}%']
+
+    total = conn.execute(
+        f"SELECT COUNT(*) as c FROM ({base_sql})", params).fetchone()['c']
+
+    logs = conn.execute(
+        base_sql + " ORDER BY b.created_at DESC LIMIT ? OFFSET ?",
+        params + [per, (page-1)*per]).fetchall()
+
+    # إجمالي الإيرادات
+    revenue = conn.execute(
+        "SELECT SUM(amount_sar) as total FROM billing_log WHERE status='active'"
+    ).fetchone()['total'] or 0
+
+    conn.close()
+    pages = max(1, (total + per - 1) // per)
+    return render_template('sa_billing.html',
+        logs=[dict(r) for r in logs],
+        total=total, page=page, pages=pages,
+        revenue=revenue, q=q, plans=PLANS)
+
+
+@app.route('/super-admin/audit')
+@super_admin_required
+def sa_audit():
+    """سجل التدقيق الكامل للنظام"""
+    conn = get_db()
+    page    = int(request.args.get('page', 1))
+    per     = 30
+    q       = request.args.get('q', '').strip()
+    co_id   = request.args.get('company', '')
+    action  = request.args.get('action', '')
+
+    sql = """SELECT a.*, u.full_name, c.name as co_name
+             FROM audit_log a
+             LEFT JOIN users u ON a.user_id=u.id
+             LEFT JOIN companies c ON a.company_id=c.id
+             WHERE 1=1"""
+    params = []
+    if q:
+        sql += " AND (u.full_name LIKE ? OR a.action LIKE ? OR a.username LIKE ?)"
+        params += [f'%{q}%']*3
+    if co_id:
+        sql += " AND a.company_id=?"; params.append(co_id)
+    if action:
+        sql += " AND a.action=?"; params.append(action)
+
+    total = conn.execute(
+        f"SELECT COUNT(*) as c FROM audit_log a LEFT JOIN users u ON a.user_id=u.id LEFT JOIN companies c ON a.company_id=c.id WHERE 1=1"
+        + (" AND (u.full_name LIKE ? OR a.action LIKE ? OR a.username LIKE ?)" if q else "")
+        + (" AND a.company_id=?" if co_id else "")
+        + (" AND a.action=?" if action else ""),
+        params).fetchone()['c']
+
+    logs = conn.execute(
+        sql + " ORDER BY a.created_at DESC LIMIT ? OFFSET ?",
+        params + [per, (page-1)*per]).fetchall()
+
+    companies = conn.execute("SELECT id, name FROM companies ORDER BY name").fetchall()
+    actions   = conn.execute("SELECT DISTINCT action FROM audit_log ORDER BY action").fetchall()
+    conn.close()
+    pages = max(1, (total + per - 1) // per)
+    return render_template('sa_audit.html',
+        logs=[dict(r) for r in logs],
+        total=total, page=page, pages=pages,
+        companies=[dict(r) for r in companies],
+        actions=[r['action'] for r in actions],
+        q=q, co_id=co_id, action=action)
+
+
+@app.route('/super-admin/broadcast', methods=['GET','POST'])
+@super_admin_required
+def sa_broadcast():
+    """إرسال إشعار لجميع الشركات أو شركة محددة"""
+    conn = get_db()
+    companies = conn.execute(
+        "SELECT id, name FROM companies WHERE is_active=1 ORDER BY name").fetchall()
+
+    if request.method == 'POST':
+        title    = request.form.get('title','').strip()
+        body     = request.form.get('body','').strip()
+        co_ids   = request.form.getlist('company_ids')
+        link     = request.form.get('link','').strip()
+
+        if not title or not body:
+            flash('العنوان والنص مطلوبان','error')
+            conn.close()
+            return render_template('sa_broadcast.html', companies=[dict(r) for r in companies])
+
+        # إذا لم تُحدَّد شركات، ابعث للكل
+        if not co_ids:
+            co_ids = [r['id'] for r in companies]
+
+        sent = 0
+        for cid in co_ids:
+            users = conn.execute(
+                "SELECT id FROM users WHERE company_id=? AND is_active=1", (cid,)).fetchall()
+            for u in users:
+                conn.execute("""INSERT INTO notifications
+                    (id,user_id,type,title,body,link,is_read,created_at)
+                    VALUES (?,?,?,?,?,?,0,?)""",
+                    (new_id(), u['id'], 'broadcast', title, body, link, now()))
+                sent += 1
+
+        conn.commit()
+        conn.close()
+        flash(f'✅ تم إرسال الإشعار لـ {sent} مستخدم', 'success')
+        return redirect(url_for('sa_broadcast'))
+
+    conn.close()
+    return render_template('sa_broadcast.html',
+        companies=[dict(r) for r in companies])
+
+
+@app.route('/super-admin/company/<cid>/detail')
+@super_admin_required
+def sa_company_detail(cid):
+    """تفاصيل شركة كاملة"""
+    conn = get_db()
+    co = conn.execute("SELECT * FROM companies WHERE id=?", (cid,)).fetchone()
+    if not co:
+        flash('الشركة غير موجودة','error')
+        conn.close()
+        return redirect(url_for('super_admin'))
+
+    users   = conn.execute(
+        "SELECT * FROM users WHERE company_id=? ORDER BY role,full_name", (cid,)).fetchall()
+    projects= conn.execute(
+        "SELECT * FROM projects WHERE company_id=? AND is_active=1 ORDER BY name", (cid,)).fetchall()
+    billing = conn.execute(
+        "SELECT * FROM billing_log WHERE company_id=? ORDER BY created_at DESC LIMIT 10", (cid,)).fetchall()
+
+    # إحصائيات
+    import datetime
+    month = datetime.date.today().strftime('%Y-%m')
+    stats = {
+        'total_corr':   conn.execute("SELECT COUNT(*) as c FROM correspondence WHERE company_id=? AND is_deleted=0",(cid,)).fetchone()['c'],
+        'month_corr':   conn.execute("SELECT COUNT(*) as c FROM correspondence WHERE company_id=? AND substr(date,1,7)=?",(cid,month)).fetchone()['c'],
+        'total_users':  conn.execute("SELECT COUNT(*) as c FROM users WHERE company_id=? AND is_active=1",(cid,)).fetchone()['c'],
+        'total_proj':   conn.execute("SELECT COUNT(*) as c FROM projects WHERE company_id=? AND is_active=1",(cid,)).fetchone()['c'],
+        'wf_pending':   conn.execute("SELECT COUNT(*) as c FROM workflow_steps ws JOIN correspondence c ON ws.correspondence_id=c.id WHERE c.company_id=? AND ws.status='pending'",(cid,)).fetchone()['c'],
+    }
+
+    sub = get_company_subscription(cid)
+    conn.close()
+    return render_template('sa_company_detail.html',
+        co=dict(co), users=[dict(r) for r in users],
+        projects=[dict(r) for r in projects],
+        billing=[dict(r) for r in billing],
+        stats=stats, sub=sub, plans=PLANS)
+
+
+@app.route('/super-admin/company/<cid>/edit', methods=['GET','POST'])
+@super_admin_required
+def sa_edit_company(cid):
+    """تعديل بيانات شركة"""
+    conn = get_db()
+    co = conn.execute("SELECT * FROM companies WHERE id=?", (cid,)).fetchone()
+    if not co:
+        conn.close()
+        flash('الشركة غير موجودة','error')
+        return redirect(url_for('super_admin'))
+
+    if request.method == 'POST':
+        conn.execute("""UPDATE companies SET
+            name=?, name_en=?, code=?, email=?, phone=?, city=?,
+            cr_number=?, address=?, primary_color=?, is_active=?
+            WHERE id=?""",
+            (request.form.get('name',''),
+             request.form.get('name_en',''),
+             request.form.get('code','').upper(),
+             request.form.get('email',''),
+             request.form.get('phone',''),
+             request.form.get('city',''),
+             request.form.get('cr_number',''),
+             request.form.get('address',''),
+             request.form.get('primary_color','#00b4d8'),
+             1 if request.form.get('is_active') else 0,
+             cid))
+        conn.commit(); conn.close()
+        flash('✅ تم تحديث بيانات الشركة','success')
+        return redirect(url_for('sa_company_detail', cid=cid))
+
+    conn.close()
+    return render_template('sa_edit_company.html', co=dict(co))
+
+
+@app.route('/super-admin/api/stats')
+@super_admin_required
+def sa_api_stats():
+    """API لإحصائيات حية"""
+    conn = get_db()
+    import datetime
+    today_str = datetime.date.today().isoformat()
+    stats = {
+        'companies':    conn.execute("SELECT COUNT(*) as c FROM companies WHERE is_active=1").fetchone()['c'],
+        'users_online': conn.execute("SELECT COUNT(*) as c FROM users WHERE last_login LIKE ?", (today_str+'%',)).fetchone()['c'],
+        'today_corr':   conn.execute("SELECT COUNT(*) as c FROM correspondence WHERE date=? AND is_deleted=0", (today_str,)).fetchone()['c'],
+        'pending_wf':   conn.execute("SELECT COUNT(*) as c FROM workflow_steps WHERE status='pending'").fetchone()['c'],
+        'expiring_soon': 0,
+    }
+    conn.close()
+    return jsonify(stats)
 
 @app.route('/settings/workflow/<wf_id>/delete', methods=['POST'])
 @admin_required

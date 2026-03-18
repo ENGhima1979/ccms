@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}سجل التدقيق{% endblock %}
+{% block page_title %}🔍 سجل التدقيق الكامل{% endblock %}
+{% block page_sub %}جميع أحداث النظام لجميع الشركات{% endblock %}
+{% block content %}
+<style>
+.sa-nav{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap}
+.sa-nav a{padding:9px 18px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;border:1px solid var(--border);color:var(--text2);transition:.2s}
+.sa-nav a:hover,.sa-nav a.active{border-color:var(--sky);color:var(--sky);background:rgba(0,180,216,.08)}
+</style>
+<div class="sa-nav">
+  <a href="{{ url_for('super_admin') }}">🏠 الرئيسية</a>
+  <a href="{{ url_for('sa_analytics') }}">📊 التحليلات</a>
+  <a href="{{ url_for('sa_billing') }}">💰 الفواتير</a>
+  <a href="{{ url_for('sa_audit') }}" class="active">🔍 سجل التدقيق</a>
+  <a href="{{ url_for('sa_broadcast') }}">📢 إشعار جماعي</a>
+</div>
+
+<div class="card mb-4">
+  <div class="card-body" style="padding:12px 16px">
+    <form method="GET" style="display:flex;gap:8px;flex-wrap:wrap">
+      <input name="q" class="form-control" value="{{ q }}" placeholder="بحث بالاسم أو الإجراء..." style="flex:1;min-width:150px">
+      <select name="company" class="form-control" style="width:auto" onchange="this.form.submit()">
+        <option value="">كل الشركات</option>
+        {% for co in companies %}
+        <option value="{{ co.id }}" {% if co_id==co.id %}selected{% endif %}>{{ co.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="action" class="form-control" style="width:auto" onchange="this.form.submit()">
+        <option value="">كل الإجراءات</option>
+        {% for a in actions %}
+        <option value="{{ a }}" {% if action==a %}selected{% endif %}>{{ a }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-ghost">بحث</button>
+      {% if q or co_id or action %}
+      <a href="{{ url_for('sa_audit') }}" class="btn btn-ghost" style="color:var(--danger)">✕</a>
+      {% endif %}
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div style="padding:12px 16px;font-size:12px;color:var(--text3)">{{ total }} سجل</div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>الوقت</th><th>الشركة</th><th>المستخدم</th><th>الإجراء</th><th>التفاصيل</th><th>IP</th></tr></thead>
+      <tbody>
+      {% for log in logs %}
+      {% set action_colors = {'LOGIN':'var(--mint)','LOGOUT':'var(--text3)','CORR_CREATE':'var(--sky)','CORR_EDIT':'var(--gold)','CORR_DELETE':'var(--danger)','workflow_approve':'var(--mint)','workflow_reject':'var(--danger)'} %}
+      <tr>
+        <td style="font-size:11px;color:var(--text3);white-space:nowrap">{{ log.created_at[:16] if log.created_at else '—' }}</td>
+        <td style="font-size:12px">{{ log.co_name or '—' }}</td>
+        <td style="font-size:13px;font-weight:600">{{ log.full_name or log.username or '—' }}</td>
+        <td>
+          <code style="font-size:11px;color:{{ action_colors.get(log.action,'var(--text2)') }};background:rgba(255,255,255,.05);padding:2px 6px;border-radius:4px">
+            {{ log.action }}
+          </code>
+        </td>
+        <td style="font-size:11px;color:var(--text3)">{{ (log.new_value or '')[:60] }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ log.ip_address or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align:center;color:var(--text3);padding:32px">لا توجد سجلات</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if pages > 1 %}
+  <div style="padding:14px 16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+    {% for p in range(1, pages+1) %}
+    <a href="?page={{ p }}&q={{ q }}&company={{ co_id }}&action={{ action }}"
+       class="btn btn-ghost btn-sm {% if p==page %}btn-electric{% endif %}">{{ p }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

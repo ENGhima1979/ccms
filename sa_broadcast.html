@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% block title %}إشعار جماعي{% endblock %}
+{% block page_title %}📢 إشعار جماعي{% endblock %}
+{% block page_sub %}إرسال إشعار لجميع المستخدمين أو شركة محددة{% endblock %}
+{% block content %}
+<style>
+.sa-nav{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap}
+.sa-nav a{padding:9px 18px;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;border:1px solid var(--border);color:var(--text2);transition:.2s}
+.sa-nav a:hover,.sa-nav a.active{border-color:var(--sky);color:var(--sky);background:rgba(0,180,216,.08)}
+</style>
+<div class="sa-nav">
+  <a href="{{ url_for('super_admin') }}">🏠 الرئيسية</a>
+  <a href="{{ url_for('sa_analytics') }}">📊 التحليلات</a>
+  <a href="{{ url_for('sa_billing') }}">💰 الفواتير</a>
+  <a href="{{ url_for('sa_audit') }}">🔍 سجل التدقيق</a>
+  <a href="{{ url_for('sa_broadcast') }}" class="active">📢 إشعار جماعي</a>
+</div>
+
+<div style="max-width:700px">
+  <div class="card">
+    <div class="card-header"><h6 class="mb-0">📢 إرسال إشعار</h6></div>
+    <div class="card-body">
+      <form method="POST">
+        <div class="form-group" style="margin-bottom:16px">
+          <label class="form-label">عنوان الإشعار <span style="color:var(--danger)">*</span></label>
+          <input name="title" class="form-control" required placeholder="مثال: تحديث النظام v3.1">
+        </div>
+        <div class="form-group" style="margin-bottom:16px">
+          <label class="form-label">نص الإشعار <span style="color:var(--danger)">*</span></label>
+          <textarea name="body" class="form-control" rows="4" required
+                    placeholder="تفاصيل الإشعار..."></textarea>
+        </div>
+        <div class="form-group" style="margin-bottom:16px">
+          <label class="form-label">رابط (اختياري)</label>
+          <input name="link" class="form-control" placeholder="/dashboard أو رابط خارجي">
+        </div>
+        <div class="form-group" style="margin-bottom:20px">
+          <label class="form-label">إرسال إلى</label>
+          <div style="padding:12px;background:rgba(0,180,216,.06);border:1px solid rgba(0,180,216,.2);border-radius:var(--rs);margin-bottom:10px">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:700;color:var(--sky)">
+              <input type="checkbox" id="allChk" style="width:16px;height:16px;accent-color:var(--sky)"
+                     onchange="toggleAll(this)">
+              🌐 جميع الشركات ({{ companies|length }} شركة)
+            </label>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:240px;overflow-y:auto;padding:4px" id="coList">
+            {% for co in companies %}
+            <label style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:var(--rs);cursor:pointer;transition:.2s"
+                   onmouseover="this.style.borderColor='var(--sky)'" onmouseout="this.style.borderColor='var(--border)'">
+              <input type="checkbox" name="company_ids" value="{{ co.id }}"
+                     style="width:14px;height:14px;accent-color:var(--sky)">
+              <span style="font-size:13px;font-weight:600">{{ co.name }}</span>
+              <code style="font-size:10px;color:var(--sky);margin-right:auto">{{ co.code }}</code>
+            </label>
+            {% endfor %}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:6px">إذا لم تختر شركة يُرسَل للجميع</div>
+        </div>
+        <button type="submit" class="btn btn-electric" style="width:100%;padding:13px;font-size:15px">
+          📢 إرسال الإشعار
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function toggleAll(chk) {
+  document.querySelectorAll('input[name="company_ids"]').forEach(c => c.checked = chk.checked);
+}
+</script>
+{% endblock %}
